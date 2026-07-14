@@ -61,6 +61,17 @@ private slots:
         vt.input(QByteArray("\x1b[31mX\x1b[0mY"));     // red X, reset, default Y
         QCOMPARE(vt.screen().at(0, 1).fgKind, CellColor::Default);
     }
+
+    void cjkIsDoubleWidth() {
+        VtEngine vt;
+        vt.input(QString::fromUtf8("星A").toUtf8());   // 星 is East-Asian wide
+        const Cell& wide = vt.screen().at(0, 0);
+        QVERIFY(wide.wide);                            // primary cell marked wide
+        QCOMPARE(wide.ch, QChar(0x661F));              // 星
+        // 'A' lands two columns over (col 1 is the skipped continuation cell).
+        QCOMPARE(vt.screen().at(0, 2).ch, QChar('A'));
+        QVERIFY(!vt.screen().at(0, 2).wide);
+    }
 };
 
 QTEST_MAIN(TestTrueColor)

@@ -55,6 +55,7 @@ int vt_sb_pushline(int cols, const void* cellsv, void* user) {
                                      : QChar(QChar::ReplacementCharacter);
         cell.bold = cells[c].attrs.bold;
         cell.reverse = cells[c].attrs.reverse;
+        cell.wide = (cells[c].width == 2);
         mapColor(cells[c].fg, cell.fgKind, cell.fgIndex, cell.fgRgb);
         mapColor(cells[c].bg, cell.bgKind, cell.bgIndex, cell.bgRgb);
         line[c] = cell;
@@ -204,6 +205,7 @@ void VtEngine::syncFromVterm() {
                                          : QChar(QChar::ReplacementCharacter);
                 cell.bold = vc.attrs.bold;
                 cell.reverse = vc.attrs.reverse;
+                cell.wide = (vc.width == 2);
                 mapColor(vc.fg, cell.fgKind, cell.fgIndex, cell.fgRgb);
                 mapColor(vc.bg, cell.bgKind, cell.bgIndex, cell.bgRgb);
             }

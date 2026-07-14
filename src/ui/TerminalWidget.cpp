@@ -207,11 +207,19 @@ void TerminalWidget::paintEvent(QPaintEvent*) {
             if (reverse) std::swap(fg, cbg);
             if (sel) { std::swap(fg, cbg); }
 
-            if (cbg != bg) p.fillRect(x, y, m_cellW, m_cellH, cbg);
+            // A double-width (CJK) glyph spans this cell plus the next; its
+            // continuation cell is blank, so paint/measure across both cells.
+            const bool wide = cell && cell->wide;
+            const int cw = wide ? 2 * m_cellW : m_cellW;
+            if (cbg != bg) p.fillRect(x, y, cw, m_cellH, cbg);
             const QChar ch = cell ? cell->ch : QChar(' ');
             if (ch != QChar(' ')) {
                 p.setPen(fg);
-                p.drawText(x, y + m_cellH - 3, QString(ch));
+                if (wide)
+                    p.drawText(QRect(x, y, cw, m_cellH), Qt::AlignHCenter | Qt::AlignBottom,
+                               QString(ch));
+                else
+                    p.drawText(x, y + m_cellH - 3, QString(ch));
             }
         }
     }

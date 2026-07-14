@@ -21,6 +21,7 @@ struct Cell {
     unsigned int bgRgb = 0;
     bool bold = false;
     bool reverse = false;
+    bool wide = false;           // double-width glyph (CJK): spans this + next cell
 };
 
 // A rows x cols grid of cells — the rendered terminal screen state.
