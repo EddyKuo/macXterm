@@ -50,6 +50,7 @@ add_library(macxterm_core STATIC
   tools/CronExpr.cpp
   tools/CronServer.cpp
   tools/TelnetServer.cpp
+  tools/SshServer.cpp
   sftp/RemotePath.cpp
   sftp/SftpEntry.cpp
   sftp/SftpConnection.cpp

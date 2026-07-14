@@ -35,7 +35,41 @@ ServersDialog::ServersDialog(QWidget* parent) : QDialog(parent) {
         [this] { m_telnet.stop(); }, [this] { return m_telnet.isRunning(); },
         [this] { return m_telnet.port(); }));
 
+    layout->addWidget(buildSshRow());
     layout->addWidget(buildCronRow());
+}
+
+QWidget* ServersDialog::buildSshRow() {
+    auto* box = new QGroupBox(QStringLiteral("SSH / SFTP server"), this);
+    auto* row = new QHBoxLayout(box);
+    auto* user = new QLineEdit(QStringLiteral("user"), box);
+    auto* pass = new QLineEdit(box);
+    pass->setEchoMode(QLineEdit::Password);
+    pass->setText(QStringLiteral("pass"));
+    auto* dir = new QLineEdit(QDir::homePath(), box);
+    auto* portSpin = new QSpinBox(box);
+    portSpin->setRange(0, 65535);
+    portSpin->setValue(2222);
+    auto* status = new QLabel(QStringLiteral("stopped"), box);
+    auto* btn = new QPushButton(QStringLiteral("Start"), box);
+    connect(btn, &QPushButton::clicked, box, [=] {
+        if (m_ssh.isRunning()) {
+            m_ssh.stop();
+            btn->setText(QStringLiteral("Start")); status->setText(QStringLiteral("stopped"));
+        } else if (m_ssh.start(static_cast<quint16>(portSpin->value()), user->text(),
+                               pass->text(), dir->text())) {
+            btn->setText(QStringLiteral("Stop"));
+            status->setText(QStringLiteral("running on 127.0.0.1:%1").arg(m_ssh.port()));
+        } else {
+            status->setText(QStringLiteral("failed (no libssh?)"));
+        }
+    });
+    row->addWidget(new QLabel(QStringLiteral("User:"), box)); row->addWidget(user);
+    row->addWidget(new QLabel(QStringLiteral("Pass:"), box)); row->addWidget(pass);
+    row->addWidget(new QLabel(QStringLiteral("Dir:"), box)); row->addWidget(dir, 1);
+    row->addWidget(new QLabel(QStringLiteral("Port:"), box)); row->addWidget(portSpin);
+    row->addWidget(btn); row->addWidget(status);
+    return box;
 }
 
 QWidget* ServersDialog::buildCronRow() {
