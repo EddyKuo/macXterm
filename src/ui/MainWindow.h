@@ -2,7 +2,9 @@
 #include "core/SessionTree.h"
 #include "core/Store.h"
 #include "core/Settings.h"
+#include "tunnel/SshTunnel.h"
 #include <QMainWindow>
+#include <QHash>
 
 class QTabWidget;
 class QTreeWidget;
@@ -50,6 +52,8 @@ private:
     core::SessionFolder m_sessions{QStringLiteral("Sessions")};
     core::Store m_store;
     core::Settings m_settings;
+    QHash<QWidget*, core::Session> m_tabSessions;   // active session per tab
+    QList<tunnel::SshTunnel*> m_tunnels;            // live tunnels
     bool m_multiExec = false;
 };
 

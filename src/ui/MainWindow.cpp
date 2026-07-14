@@ -43,6 +43,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_tabs->setStyleSheet(QStringLiteral("QTabWidget::tab-bar { alignment: left; }"));
     connect(m_tabs, &QTabWidget::tabCloseRequested, m_tabs, [this](int i) {
         QWidget* w = m_tabs->widget(i);
+        m_tabSessions.remove(w);
         m_tabs->removeTab(i);
         w->deleteLater();
     });
@@ -92,8 +93,31 @@ void MainWindow::buildToolbar() {
 
     auto* tunnels = tb->addAction(QStringLiteral("Tunnel"));
     connect(tunnels, &QAction::triggered, this, [this] {
+        // The tunnel is established through the currently-active SSH tab.
+        QWidget* cur = m_tabs->currentWidget();
+        const core::Session sshSession = m_tabSessions.value(cur);
+        if (sshSession.type() != core::SessionType::Ssh) {
+            QMessageBox::information(this, QStringLiteral("SSH Tunnel"),
+                QStringLiteral("Open and select an SSH session tab first — the tunnel is "
+                               "forwarded through it."));
+            return;
+        }
         TunnelDialog dlg(this);
-        dlg.exec();   // tunnel manager integration in a later phase
+        if (dlg.exec() == QDialog::Accepted) {
+            auto* t = new tunnel::SshTunnel(this);
+            connect(t, &tunnel::SshTunnel::error, this, [this](const QString& m) {
+                QMessageBox::warning(this, QStringLiteral("Tunnel error"), m);
+            });
+            if (t->start(sshSession, dlg.tunnel())) {
+                m_tunnels.append(t);
+                QMessageBox::information(this, QStringLiteral("SSH Tunnel"),
+                    QStringLiteral("Local tunnel listening on port %1 → %2:%3 via %4")
+                        .arg(t->listenPort()).arg(dlg.tunnel().targetHost)
+                        .arg(dlg.tunnel().targetPort).arg(sshSession.host()));
+            } else {
+                t->deleteLater();
+            }
+        }
     });
 
     auto* settings = tb->addAction(QStringLiteral("Settings"));
@@ -198,6 +222,7 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
     }
     term->attach(conn);
     applySettings(term);
+    m_tabSessions.insert(term, session);   // remember which session drives this tab
     const int idx = m_tabs->addTab(term, session.name());
     m_tabs->setCurrentIndex(idx);
     conn->connectSession(session);
