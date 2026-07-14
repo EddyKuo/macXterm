@@ -1,5 +1,6 @@
 #pragma once
 #include "connect/IConnection.h"
+#include <vector>
 
 class QSocketNotifier;
 typedef struct _LIBSSH2_SESSION LIBSSH2_SESSION;
@@ -25,17 +26,26 @@ public:
     void resize(int cols, int rows) override;
     Capabilities capabilities() const override { return {true, true, true, false}; }
 
+    // X11 forwarding: invoked from libssh2's C callback when the remote app
+    // opens an X connection — connect the local X server and relay both ways.
+    void acceptX11(LIBSSH2_CHANNEL* channel);
+
 private slots:
     void onSocketReadable();
+    void onX11SocketReadable();
 
 private:
     bool doHandshakeAndAuth(const core::Session& session);
     void cleanup();
+    void pumpX11();
+
+    struct X11Fwd { LIBSSH2_CHANNEL* chan; int xsock; QSocketNotifier* notifier; };
 
     int m_sock = -1;
     LIBSSH2_SESSION* m_session = nullptr;
     LIBSSH2_CHANNEL* m_channel = nullptr;
     QSocketNotifier* m_notifier = nullptr;
+    std::vector<X11Fwd> m_x11;
     int m_cols = 80;
     int m_rows = 24;
 };
