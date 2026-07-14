@@ -32,6 +32,7 @@
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
 #include "core/IniStore.h"
+#include "x11/X11Server.h"
 #include <QTimer>
 #include <QImage>
 #include <QMenuBar>
@@ -266,6 +267,12 @@ void MainWindow::buildMenus() {
         dlg->show();
     });
     tools->addSeparator();
+    tools->addAction(QStringLiteral("Start X Server (for X11 forwarding)"), this, [this] {
+        QString msg;
+        const bool ok = x11::X11Server::ensureRunning(msg);
+        if (ok) statusBar()->showMessage(msg, 5000);
+        else QMessageBox::information(this, QStringLiteral("X Server"), msg);
+    });
     tools->addAction(QStringLiteral("Log Session to File…"), this, [this] {
         TerminalWidget* pane = currentPane();
         if (!pane) return;
@@ -637,6 +644,15 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
     m_tabSessions.insert(term, session);
     if (m_multiExec)
         term->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
+
+    // For SSH sessions with X11 forwarding enabled, make sure a local X server is
+    // up so forwarded windows can display (best-effort; no-op if already running).
+    if (session.type() == core::SessionType::Ssh && session.param("x11", "1") != "0"
+        && !x11::X11Server::isRunning()) {
+        QString msg;
+        x11::X11Server::ensureRunning(msg);
+        if (!msg.isEmpty()) statusBar()->showMessage(msg, 4000);
+    }
     conn->connectSession(resolveSecrets(session));
 
     // Show the SFTP browser + start the remote monitor for SSH sessions.

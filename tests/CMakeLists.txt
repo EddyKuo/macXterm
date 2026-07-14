@@ -57,6 +57,7 @@ set(MACXTERM_TESTS
   test_cronexpr
   test_sshserver_live
   test_nfs
+  test_x11server
 )
 
 foreach(t ${MACXTERM_TESTS})

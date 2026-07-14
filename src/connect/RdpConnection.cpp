@@ -49,6 +49,24 @@ bool RdpConnection::connectSession(const core::Session& session) {
     if (session.param("ignorecert") == "1")
         freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
+    // Device / resource redirection (MobaXterm RDP advanced options). Enabling
+    // these advertises the corresponding virtual channels during negotiation.
+    if (session.param("redirect_clipboard", "1") != "0")
+        freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE);
+    if (session.param("redirect_drives") == "1")
+        freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives, TRUE);
+    if (session.param("redirect_printers") == "1")
+        freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters, TRUE);
+    if (session.param("redirect_smartcard") == "1")
+        freerdp_settings_set_bool(settings, FreeRDP_RedirectSmartCards, TRUE);
+    if (session.param("redirect_audio") == "1")
+        freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, TRUE);
+    // RemoteFX / CredSSP (NLA) toggles.
+    if (session.param("remotefx") == "1")
+        freerdp_settings_set_bool(settings, FreeRDP_RemoteFxCodec, TRUE);
+    if (session.param("nla") == "0")
+        freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, FALSE);
+
     if (!freerdp_connect(m_instance)) {
         setState(State::Failed);
         emit errorOccurred(QStringLiteral("RDP connection to %1 failed").arg(session.host()));
