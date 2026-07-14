@@ -38,6 +38,17 @@ public:
     qint64 download(const QString& remotePath, const QString& localPath);
     qint64 upload(const QString& localPath, const QString& remotePath);
 
+    // Resolve a path (e.g. "." or a relative path) to its absolute canonical
+    // form on the server. Returns an empty string on error.
+    QString realpath(const QString& path);
+
+    // File-management ops used by the panel context menu. Return true on success.
+    bool chmod(const QString& path, unsigned int mode);   // mode = octal perms (0755…)
+    bool makeDir(const QString& path, unsigned int mode = 0755);
+    bool removeFile(const QString& path);
+    bool removeDir(const QString& path);
+    bool rename(const QString& from, const QString& to);
+
 signals:
     void error(const QString& message);
 

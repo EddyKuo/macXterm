@@ -39,9 +39,12 @@ public:
 signals:
     void outputReady(const QByteArray& bytes);
     void screenUpdated();
+    void titleChanged(const QString& title);   // OSC 0/2
+    void cwdChanged(const QString& absPath);    // OSC 7 (file://host/path)
 
 private:
     void syncFromVterm();
+    void scanOsc(const QByteArray& bytes);      // sniff OSC 7 cwd from raw stream
 
     VTerm* m_vt = nullptr;
     VTermScreen* m_vts = nullptr;
@@ -49,6 +52,9 @@ private:
     QByteArray m_pendingOutput;
     QList<QVector<Cell>> m_scrollback;   // scrolled-off lines (capped)
     int m_scrollbackMax = 10000;
+    // OSC scanner state (for OSC 7 cwd / OSC 0,2 title).
+    int m_oscState = 0;                  // 0 normal, 1 saw ESC, 2 in OSC body
+    QByteArray m_oscBuf;
     friend void vt_output_cb(const char* s, size_t len, void* user);
     friend int vt_sb_pushline(int cols, const void* cells, void* user);
     friend int vt_sb_popline(int cols, void* cells, void* user);

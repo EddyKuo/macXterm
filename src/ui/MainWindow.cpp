@@ -556,6 +556,9 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
     // Show the SFTP browser + start the remote monitor for SSH sessions.
     if (conn->capabilities().sftp) {
         showSftpFor(session);
+        // Follow-terminal-folder: OSC 7 cwd changes re-home the SFTP panel.
+        if (m_sftpPanel)
+            connect(term, &TerminalWidget::cwdChanged, m_sftpPanel, &SftpPanel::setRemoteCwd);
         if (!m_monitor) {
             m_monitor = new RemoteMonitorBar(this);
             statusBar()->addPermanentWidget(m_monitor);

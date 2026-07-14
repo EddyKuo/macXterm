@@ -48,6 +48,10 @@ public:
 
     QSize sizeHint() const override { return {640, 400}; }
 
+signals:
+    void cwdChanged(const QString& absPath);   // OSC 7 from the shell
+    void titleChanged(const QString& title);    // OSC 0/2
+
 protected:
     void paintEvent(QPaintEvent*) override;
     void keyPressEvent(QKeyEvent* e) override;

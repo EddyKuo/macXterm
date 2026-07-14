@@ -166,4 +166,50 @@ qint64 SftpConnection::upload(const QString& localPath, const QString& remotePat
     return total;
 }
 
+QString SftpConnection::realpath(const QString& path) {
+    if (!m_sftp) return {};
+    char buf[1024];
+    const int rc = libssh2_sftp_realpath(m_sftp, path.toUtf8().constData(), buf, sizeof(buf));
+    if (rc <= 0) return {};
+    return QString::fromUtf8(buf, rc);
+}
+
+bool SftpConnection::chmod(const QString& path, unsigned int mode) {
+    if (!m_sftp) return false;
+    LIBSSH2_SFTP_ATTRIBUTES attrs{};
+    attrs.flags = LIBSSH2_SFTP_ATTR_PERMISSIONS;
+    attrs.permissions = mode & 07777;
+    const int rc = libssh2_sftp_setstat(m_sftp, path.toUtf8().constData(), &attrs);
+    if (rc != 0) emit error(QStringLiteral("chmod failed: %1").arg(path));
+    return rc == 0;
+}
+
+bool SftpConnection::makeDir(const QString& path, unsigned int mode) {
+    if (!m_sftp) return false;
+    const int rc = libssh2_sftp_mkdir(m_sftp, path.toUtf8().constData(), mode & 07777);
+    if (rc != 0) emit error(QStringLiteral("mkdir failed: %1").arg(path));
+    return rc == 0;
+}
+
+bool SftpConnection::removeFile(const QString& path) {
+    if (!m_sftp) return false;
+    const int rc = libssh2_sftp_unlink(m_sftp, path.toUtf8().constData());
+    if (rc != 0) emit error(QStringLiteral("delete failed: %1").arg(path));
+    return rc == 0;
+}
+
+bool SftpConnection::removeDir(const QString& path) {
+    if (!m_sftp) return false;
+    const int rc = libssh2_sftp_rmdir(m_sftp, path.toUtf8().constData());
+    if (rc != 0) emit error(QStringLiteral("rmdir failed: %1").arg(path));
+    return rc == 0;
+}
+
+bool SftpConnection::rename(const QString& from, const QString& to) {
+    if (!m_sftp) return false;
+    const int rc = libssh2_sftp_rename(m_sftp, from.toUtf8().constData(), to.toUtf8().constData());
+    if (rc != 0) emit error(QStringLiteral("rename failed: %1").arg(from));
+    return rc == 0;
+}
+
 } // namespace macxterm::sftp

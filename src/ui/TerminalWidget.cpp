@@ -34,6 +34,9 @@ TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
         if (m_scrollOffset == 0) update();
         else update();
     });
+    // Re-emit terminal cwd/title so the window can update the SFTP panel/tab.
+    connect(&m_vt, &term::VtEngine::cwdChanged, this, &TerminalWidget::cwdChanged);
+    connect(&m_vt, &term::VtEngine::titleChanged, this, &TerminalWidget::titleChanged);
 }
 
 void TerminalWidget::updateCellMetrics() {

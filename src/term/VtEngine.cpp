@@ -1,5 +1,7 @@
 #include "term/VtEngine.h"
 #include <vterm.h>
+#include <QUrl>
+#include <QString>
 
 namespace macxterm::term {
 
@@ -60,6 +62,19 @@ VtEngine::VtEngine(int rows, int cols, QObject* parent)
         c.sb_popline = [](int cols, VTermScreenCell* cells, void* user) {
             return vt_sb_popline(cols, cells, user);
         };
+        c.settermprop = [](VTermProp prop, VTermValue* val, void* user) -> int {
+            if (prop == VTERM_PROP_TITLE && val) {
+                auto* self = static_cast<VtEngine*>(user);
+#if defined(VTERM_VERSION_MAJOR) && (VTERM_VERSION_MAJOR > 0 || VTERM_VERSION_MINOR >= 2)
+                // libvterm >= 0.2 delivers strings as fragments.
+                const QString t = QString::fromUtf8(val->string.str, val->string.len);
+#else
+                const QString t = QString::fromUtf8(val->string);
+#endif
+                emit self->titleChanged(t);
+            }
+            return 1;
+        };
         return c;
     }();
     vterm_screen_set_callbacks(m_vts, &kCallbacks, this);
@@ -84,7 +99,46 @@ void VtEngine::resize(int rows, int cols) {
     syncFromVterm();
 }
 
+// Scan the raw stream for OSC 7 (current working directory), which libvterm
+// does not surface as a term property. A shell emits: ESC ] 7 ; file://host/path
+// terminated by BEL (0x07) or ST (ESC \). We keep a small state machine so a
+// sequence may span multiple input() calls.
+void VtEngine::scanOsc(const QByteArray& bytes) {
+    for (int i = 0; i < bytes.size(); ++i) {
+        const unsigned char b = static_cast<unsigned char>(bytes[i]);
+        switch (m_oscState) {
+        case 0:
+            if (b == 0x1b) m_oscState = 1;
+            break;
+        case 1:
+            if (b == ']') { m_oscState = 2; m_oscBuf.clear(); }
+            else m_oscState = 0;
+            break;
+        case 2:
+            if (b == 0x07 || b == 0x1b) {          // BEL or start of ST (ESC \)
+                // Parse "cmd;payload".
+                const int semi = m_oscBuf.indexOf(';');
+                if (semi > 0) {
+                    const QByteArray cmd = m_oscBuf.left(semi);
+                    const QByteArray payload = m_oscBuf.mid(semi + 1);
+                    if (cmd == "7") {
+                        const QUrl url = QUrl(QString::fromUtf8(payload));
+                        const QString path = url.path();
+                        if (!path.isEmpty()) emit cwdChanged(path);
+                    }
+                }
+                m_oscBuf.clear();
+                m_oscState = (b == 0x1b) ? 1 : 0;   // ESC may begin ST's backslash
+            } else {
+                if (m_oscBuf.size() < 4096) m_oscBuf.append(static_cast<char>(b));
+            }
+            break;
+        }
+    }
+}
+
 void VtEngine::input(const QByteArray& bytes) {
+    scanOsc(bytes);
     vterm_input_write(m_vt, bytes.constData(), bytes.size());
     if (!m_pendingOutput.isEmpty()) {
         emit outputReady(m_pendingOutput);

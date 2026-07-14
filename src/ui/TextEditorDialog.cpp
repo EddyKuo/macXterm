@@ -46,8 +46,11 @@ void TextEditorDialog::save() {
     if (m_diffMode) return;
     if (m_path.isEmpty()) { saveAs(); return; }
     QFile f(m_path);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         f.write(m_edit->toPlainText().toUtf8());
+        f.close();
+        emit fileSaved(m_path);
+    }
 }
 
 void TextEditorDialog::saveAs() {

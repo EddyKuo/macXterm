@@ -18,6 +18,11 @@ public:
     // Show a read-only diff of two files.
     void showDiff(const QString& fileA, const QString& fileB);
 
+signals:
+    // Emitted after the buffer is written to disk (used by the SFTP panel to
+    // re-upload a remotely-edited file).
+    void fileSaved(const QString& path);
+
 private slots:
     void openDialog();
     void save();
