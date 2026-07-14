@@ -24,6 +24,8 @@ set(MACXTERM_TESTS
   test_mosh
   test_textdiff
   test_hostkey
+  test_awssigv4
+  test_s3
   test_forwarder
   test_httpserver
   test_simpletcp

@@ -20,6 +20,9 @@
 #include "ui/TextEditorDialog.h"
 #include "ui/ServersDialog.h"
 #include "ui/RemoteMonitorBar.h"
+#include "tools/S3Client.h"
+#include <QListWidget>
+#include <QVBoxLayout>
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
 #include <QTimer>
@@ -563,6 +566,29 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
 }
 
 TerminalWidget* MainWindow::openSession(const core::Session& session) {
+    // S3 sessions list the bucket in a simple dialog (host=bucket,
+    // username=accessKey, password=secretKey, param "region").
+    if (session.type() == core::SessionType::S3) {
+        const core::Session s = resolveSecrets(session);
+        auto* client = new tools::S3Client(this);
+        auto* dlg = new QDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setWindowTitle(QStringLiteral("S3: ") + s.host());
+        dlg->resize(420, 520);
+        auto* lay = new QVBoxLayout(dlg);
+        auto* list = new QListWidget(dlg);
+        lay->addWidget(list);
+        connect(client, &tools::S3Client::listed, dlg, [list](const QStringList& keys) {
+            list->addItems(keys.isEmpty() ? QStringList{QStringLiteral("(empty)")} : keys);
+        });
+        connect(client, &tools::S3Client::failed, dlg, [list](const QString& e) {
+            list->addItem(QStringLiteral("Error: ") + e);
+        });
+        client->listBucket(s.username(), s.param("password"),
+                           s.param("region", QStringLiteral("us-east-1")), s.host());
+        dlg->show();
+        return nullptr;
+    }
     // Browser sessions just open a URL in the system browser.
     if (session.type() == core::SessionType::Browser) {
         QString url = session.host();

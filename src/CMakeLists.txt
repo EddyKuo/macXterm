@@ -37,6 +37,8 @@ add_library(macxterm_core STATIC
   tools/SshExec.cpp
   tools/TftpPacket.cpp
   tools/TextDiff.cpp
+  tools/AwsSigV4.cpp
+  tools/S3Client.cpp
   tools/HttpServer.cpp
   tools/FtpCommand.cpp
   tools/FtpServer.cpp
