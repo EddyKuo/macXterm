@@ -15,6 +15,7 @@
 #include "ui/SftpPanel.h"
 #include "ui/RdpSurfaceWidget.h"
 #include "ui/PortScannerDialog.h"
+#include "ui/KeyGenDialog.h"
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
 #include <QTimer>
@@ -121,6 +122,11 @@ void MainWindow::buildMenus() {
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
+    tools->addAction(QStringLiteral("SSH Key Generator…"), this, [this] {
+        auto* dlg = new KeyGenDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
 
     QMenu* macros = menuBar()->addMenu(QStringLiteral("&Macros"));
     macros->addAction(QStringLiteral("Start/Stop Recording"), this, &MainWindow::toggleMacroRecording)
@@ -178,6 +184,40 @@ void MainWindow::playMacro() {
     TerminalWidget* pane = currentPane();
     if (!pane || m_macro.eventCount() == 0) return;
     m_macro.replay([pane](const QByteArray& b) { pane->feedInput(b); });
+}
+
+QString MainWindow::vaultPath() const {
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+           + QStringLiteral("/vault.bin");
+}
+
+void MainWindow::openVault() {
+    const bool exists = QFileInfo::exists(vaultPath());
+    VaultDialog dlg(exists ? VaultDialog::Mode::Unlock : VaultDialog::Mode::Create, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QString pw = dlg.password();
+    if (exists) {
+        if (!m_vault.load(vaultPath(), pw)) {
+            QMessageBox::warning(this, QStringLiteral("Vault"), QStringLiteral("Wrong master password."));
+            return;
+        }
+    } else {
+        m_vault.clear();
+        m_vault.save(vaultPath(), pw);   // create an empty vault
+    }
+    m_masterPassword = pw;
+    m_vaultUnlocked = true;
+    statusBar()->showMessage(QStringLiteral("Vault unlocked — session passwords are now stored encrypted."), 4000);
+}
+
+core::Session MainWindow::resolveSecrets(core::Session s) const {
+    // If the session references a vault secret and the vault is unlocked, inject
+    // the real password before connecting (kept out of the SQLite store).
+    const QString ref = s.param("vault_ref");
+    if (!ref.isEmpty() && m_vaultUnlocked && m_vault.hasSecret(ref)) {
+        s.setParam("password", m_vault.secret(ref));
+    }
+    return s;
 }
 
 void MainWindow::importSshConfig() {
@@ -266,10 +306,7 @@ void MainWindow::buildToolbar() {
     });
 
     auto* vault = tb->addAction(QStringLiteral("Vault"));
-    connect(vault, &QAction::triggered, this, [this] {
-        VaultDialog dlg(VaultDialog::Mode::Unlock, this);
-        dlg.exec();
-    });
+    connect(vault, &QAction::triggered, this, [this] { openVault(); });
 
     // Quick-connect bar: type "user@host[:port]" and press Enter to SSH.
     tb->addSeparator();
@@ -319,7 +356,20 @@ void MainWindow::persistSessions() {
     if (m_store.isOpen()) m_store.saveTree(m_sessions);
 }
 
-void MainWindow::addAndSaveSession(const core::Session& s) {
+void MainWindow::addAndSaveSession(const core::Session& sIn) {
+    core::Session s = sIn;
+    // If a password was entered and the vault is unlocked, store it encrypted in
+    // the vault and keep only a reference in the (SQLite) session — never a
+    // plaintext password in the database.
+    if (!s.param("password").isEmpty() && m_vaultUnlocked) {
+        const QString ref = QStringLiteral("session:") + s.name();
+        m_vault.setSecret(ref, s.param("password"));
+        m_vault.save(vaultPath(), m_masterPassword);
+        s.setParam("vault_ref", ref);
+        QVariantMap p = s.params();
+        p.remove(QStringLiteral("password"));
+        s.setParams(p);
+    }
     m_sessions.addSession(s);
     persistSessions();
     reloadSessionTree();
@@ -383,7 +433,7 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
     m_tabSessions.insert(term, session);
     if (m_multiExec)
         term->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
-    conn->connectSession(session);
+    conn->connectSession(resolveSecrets(session));
 
     // Show the SFTP browser for connections that support it (SSH/SFTP).
     if (conn->capabilities().sftp) showSftpFor(session);
@@ -423,10 +473,10 @@ void MainWindow::openGraphicalSession(const core::Session& session) {
                             tile.setPixel(c, r, px[r * w + c]);
                     surface->updateRect(x, y, tile);
                 });
-        vnc->connectSession(session);
+        vnc->connectSession(resolveSecrets(session));
     } else {  // RDP
         auto* rdp = new connect::RdpConnection(surface);
-        if (rdp->connectSession(session)) {
+        if (rdp->connectSession(resolveSecrets(session))) {
             // Pump the FreeRDP event loop and refresh the surface periodically.
             auto* timer = new QTimer(surface);
             connect(timer, &QTimer::timeout, surface, [rdp, surface, timer] {
@@ -494,7 +544,7 @@ void MainWindow::showSftpFor(const core::Session& session) {
         addDockWidget(Qt::RightDockWidgetArea, m_sftpDock);
     }
     m_sftpDock->show();
-    m_sftpPanel->openFor(session);   // dedicated SFTP session (blocking; LAN-fast)
+    m_sftpPanel->openFor(resolveSecrets(session));   // dedicated SFTP session (blocking; LAN-fast)
 }
 
 void MainWindow::toggleMultiExec(bool on) {

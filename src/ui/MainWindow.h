@@ -4,6 +4,7 @@
 #include "core/Settings.h"
 #include "tunnel/SshTunnel.h"
 #include "core/Macro.h"
+#include "core/CredentialVault.h"
 #include <QMainWindow>
 #include <QHash>
 
@@ -49,6 +50,9 @@ private:
     void persistSessions();
     void loadSettings();
     void saveSettings();
+    void openVault();                               // create/unlock the vault
+    QString vaultPath() const;
+    core::Session resolveSecrets(core::Session s) const;  // inject vault password
     void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
     void showSftpFor(const core::Session& session);
@@ -68,6 +72,9 @@ private:
     QList<tunnel::SshTunnel*> m_tunnels;            // live tunnels
     core::Macro m_macro;                            // last recorded macro
     bool m_recordingMacro = false;
+    core::CredentialVault m_vault;
+    QString m_masterPassword;
+    bool m_vaultUnlocked = false;
     bool m_multiExec = false;
 };
 
