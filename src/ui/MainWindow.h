@@ -1,0 +1,39 @@
+#pragma once
+#include "core/SessionTree.h"
+#include <QMainWindow>
+
+class QTabWidget;
+class QTreeWidget;
+class QTreeWidgetItem;
+
+namespace macxterm::ui {
+
+class TerminalWidget;
+
+// Main application window: session tree sidebar + tabbed terminal area + toolbar
+// (Architecture §3, UI_Spec). Phase 1 wires local shell + SSH tabs and MultiExec.
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+
+    // Open a new tab running the local shell.
+    TerminalWidget* openLocalShell();
+    // Open a new tab for a saved session (SSH/local for now).
+    TerminalWidget* openSession(const core::Session& session);
+
+public slots:
+    void toggleMultiExec(bool on);
+
+private:
+    void buildToolbar();
+    void reloadSessionTree();
+    void onTreeActivated(QTreeWidgetItem* item, int column);
+
+    QTabWidget* m_tabs = nullptr;
+    QTreeWidget* m_tree = nullptr;
+    core::SessionFolder m_sessions{QStringLiteral("Sessions")};
+    bool m_multiExec = false;
+};
+
+} // namespace macxterm::ui

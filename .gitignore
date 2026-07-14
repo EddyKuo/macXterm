@@ -1,0 +1,30 @@
+# ── Build output ──
+/build/
+*.o
+*.obj
+*.exe
+*.dylib
+*.so
+*.a
+scripts/win/conpty_check.exe
+
+# ── OS / editor cruft ──
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+compile_commands.json
+
+# ── Development-process artifacts (the AI software-team framework used to build
+#    macXterm; not part of the shipped product) ──
+/agents/
+/skills/
+/profiles/
+/contracts/
+/sprint/
+/exceptions/
+/.decisions/
+/research/
+/.claude/
+/CLAUDE.md

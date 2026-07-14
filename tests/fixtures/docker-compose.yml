@@ -1,0 +1,26 @@
+# Server-side fixtures for live protocol e2e tests (TestPlan live-endpoint
+# discipline). Brings up a real sshd (and SFTP subsystem) so test_ssh_live runs
+# end-to-end in CI. Point the guarded-live tests at it via:
+#   MACXTERM_SSH_TEST_HOST=127.0.0.1 MACXTERM_SSH_TEST_PORT=2222 \
+#   MACXTERM_SSH_TEST_USER=tester   MACXTERM_SSH_TEST_PASS=testpass \
+#   ctest -R test_ssh_live
+#
+# Local run:  docker compose -f tests/fixtures/docker-compose.yml up -d
+services:
+  sshd:
+    image: linuxserver/openssh-server:latest
+    environment:
+      - USER_NAME=tester
+      - USER_PASSWORD=testpass
+      - PASSWORD_ACCESS=true
+      - SUDO_ACCESS=false
+    ports:
+      - "2222:2222"
+
+  # A plain telnet target for test_telnet_live in CI (optional; the unit test
+  # also runs against an in-process mock server, so this is only for a
+  # real-network smoke).
+  telnetd:
+    image: istio/tcp-echo-server:latest
+    ports:
+      - "2323:9000"
