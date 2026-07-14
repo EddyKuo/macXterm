@@ -7,6 +7,8 @@
 #include <QResizeEvent>
 #include <QApplication>
 #include <QClipboard>
+#include <QFile>
+#include <QMessageBox>
 #include <algorithm>
 
 namespace macxterm::ui {
@@ -39,6 +41,8 @@ TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
     connect(&m_vt, &term::VtEngine::titleChanged, this, &TerminalWidget::titleChanged);
 }
 
+TerminalWidget::~TerminalWidget() { stopLogging(); }
+
 void TerminalWidget::updateCellMetrics() {
     QFontMetrics fm(font());
     m_cellW = std::max(1, fm.horizontalAdvance('M'));
@@ -63,6 +67,28 @@ void TerminalWidget::attach(connect::IConnection* conn) {
     m_conn = conn;
     connect(conn, &connect::IConnection::dataReceived, &m_vt, &term::VtEngine::input);
     connect(&m_vt, &term::VtEngine::outputReady, conn, &connect::IConnection::send);
+    // Session logging tap: mirror raw output to the log file when enabled.
+    connect(conn, &connect::IConnection::dataReceived, this, [this](const QByteArray& b) {
+        if (m_logFile) { m_logFile->write(b); m_logFile->flush(); }
+    });
+}
+
+void TerminalWidget::setSyntaxHighlighting(bool on) {
+    if (on && m_highlighter.ruleCount() == 0) m_highlighter.loadDefaults();
+    m_highlighter.setEnabled(on);
+    update();
+}
+
+bool TerminalWidget::startLogging(const QString& path) {
+    stopLogging();
+    auto* f = new QFile(path);
+    if (!f->open(QIODevice::WriteOnly | QIODevice::Append)) { delete f; return false; }
+    m_logFile = f;
+    return true;
+}
+
+void TerminalWidget::stopLogging() {
+    if (m_logFile) { m_logFile->close(); delete m_logFile; m_logFile = nullptr; }
 }
 
 void TerminalWidget::feedInput(const QByteArray& bytes) {
@@ -122,13 +148,34 @@ void TerminalWidget::paintEvent(QPaintEvent*) {
     QPoint sa, sb2;
     if (m_hasSelection) selNormalized(sa, sb2);
 
+    const bool hl = m_highlighter.enabled();
     for (int r = 0; r < rows; ++r) {
         const int absLine = top + r;
         const int y = r * m_cellH;
+
+        // Syntax highlighting: build the row text and map matched spans to an
+        // per-column color override.
+        QVector<QColor> hlColor;
+        if (hl) {
+            QString lineText(cols, QChar(' '));
+            for (int c = 0; c < cols; ++c) {
+                const term::Cell* cc = cellAt(absLine, c);
+                if (cc) lineText[c] = cc->ch;
+            }
+            const auto spans = m_highlighter.highlight(lineText);
+            if (!spans.isEmpty()) {
+                hlColor.resize(cols);
+                for (const term::HighlightSpan& s : spans)
+                    for (int i = s.start; i < s.start + s.length && i < cols; ++i)
+                        hlColor[i] = s.color;
+            }
+        }
+
         for (int c = 0; c < cols; ++c) {
             const term::Cell* cell = cellAt(absLine, c);
             const int x = c * m_cellW;
             QColor fg = m_scheme.ansi(cell ? (cell->fg & 0x0f) : 7);
+            if (!hlColor.isEmpty() && hlColor[c].isValid()) fg = hlColor[c];
             QColor cbg = m_scheme.ansi(cell ? (cell->bg & 0x0f) : 0);
             if (cbg == m_scheme.ansi(0)) cbg = bg;
             bool reverse = cell && cell->reverse;
@@ -272,11 +319,20 @@ void TerminalWidget::copySelection() {
 
 void TerminalWidget::paste() {
     if (!m_conn) return;
-    const QString text = QApplication::clipboard()->text();
-    if (!text.isEmpty()) {
-        if (m_scrollOffset != 0) { m_scrollOffset = 0; update(); }
-        sendInput(text.toUtf8());
+    QString text = QApplication::clipboard()->text();
+    if (text.isEmpty()) return;
+    // Multiline-paste guard: pasting text with embedded newlines can execute
+    // commands immediately in a shell, so confirm first (MobaXterm behaviour).
+    const int lines = text.count('\n') + (text.endsWith('\n') ? 0 : 1);
+    if (text.contains('\n') && lines > 1) {
+        const auto btn = QMessageBox::question(
+            this, QStringLiteral("Confirm paste"),
+            QStringLiteral("You are about to paste %1 lines. Continue?").arg(lines),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (btn != QMessageBox::Yes) return;
     }
+    if (m_scrollOffset != 0) { m_scrollOffset = 0; update(); }
+    sendInput(text.toUtf8());
 }
 
 } // namespace macxterm::ui

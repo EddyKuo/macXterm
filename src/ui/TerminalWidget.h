@@ -1,11 +1,14 @@
 #pragma once
 #include "term/VtEngine.h"
 #include "term/ColorScheme.h"
+#include "term/SyntaxHighlighter.h"
 #include "connect/IConnection.h"
 #include <QWidget>
 #include <QFont>
 #include <QPoint>
 #include <functional>
+
+class QFile;
 
 class QKeyEvent;
 class QMouseEvent;
@@ -20,6 +23,7 @@ class TerminalWidget : public QWidget {
     Q_OBJECT
 public:
     explicit TerminalWidget(QWidget* parent = nullptr);
+    ~TerminalWidget() override;
 
     // Attach a connection (takes ownership). Wires data both directions.
     void attach(connect::IConnection* conn);
@@ -41,6 +45,16 @@ public:
     // Appearance.
     void setColorScheme(const term::ColorScheme& scheme);
     void setTerminalFont(const QFont& font);
+
+    // Terminal keyword/regex syntax highlighting (MobaXterm feature).
+    void setSyntaxHighlighting(bool on);
+    bool syntaxHighlighting() const { return m_highlighter.enabled(); }
+
+    // Session logging: mirror all received output to a file. Returns false if
+    // the file can't be opened. stopLogging() closes it.
+    bool startLogging(const QString& path);
+    void stopLogging();
+    bool isLogging() const { return m_logFile != nullptr; }
 
     // Clipboard.
     void copySelection();
@@ -72,6 +86,8 @@ private:
 
     term::VtEngine m_vt;
     term::ColorScheme m_scheme;
+    term::SyntaxHighlighter m_highlighter;
+    QFile* m_logFile = nullptr;
     connect::IConnection* m_conn = nullptr;
     int m_cellW = 8;
     int m_cellH = 16;

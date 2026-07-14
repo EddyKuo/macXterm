@@ -86,6 +86,7 @@ private:
     core::ShortcutRegistry m_shortcuts;
     QHash<QString, QAction*> m_shortcutActions;
     bool m_multiExec = false;
+    bool m_syntaxHighlight = false;
 };
 
 } // namespace macxterm::ui

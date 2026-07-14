@@ -190,6 +190,14 @@ void MainWindow::buildMenus() {
                          [this, pct] { setWindowOpacity(pct / 100.0); });
     }
     view->addSeparator();
+    auto* hlAction = view->addAction(QStringLiteral("Syntax Highlighting"));
+    hlAction->setCheckable(true);
+    connect(hlAction, &QAction::toggled, this, [this](bool on) {
+        for (TerminalWidget* p : m_tabs->findChildren<TerminalWidget*>())
+            p->setSyntaxHighlighting(on);
+        m_syntaxHighlight = on;
+    });
+    view->addSeparator();
     view->addAction(QStringLiteral("Detach Current Tab"), this, &MainWindow::detachCurrentTab);
     view->addAction(QStringLiteral("Keyboard Shortcuts…"), this, &MainWindow::editShortcuts);
 
@@ -224,6 +232,22 @@ void MainWindow::buildMenus() {
         auto* dlg = new ServersDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
+    });
+    tools->addSeparator();
+    tools->addAction(QStringLiteral("Log Session to File…"), this, [this] {
+        TerminalWidget* pane = currentPane();
+        if (!pane) return;
+        if (pane->isLogging()) {
+            pane->stopLogging();
+            statusBar()->showMessage(QStringLiteral("Session logging stopped"), 3000);
+            return;
+        }
+        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Log session to"));
+        if (path.isEmpty()) return;
+        if (pane->startLogging(path))
+            statusBar()->showMessage(QStringLiteral("Logging session → %1").arg(path), 3000);
+        else
+            QMessageBox::warning(this, windowTitle(), QStringLiteral("Cannot open log file"));
     });
 
     QMenu* macros = menuBar()->addMenu(QStringLiteral("&Macros"));
@@ -738,6 +762,7 @@ void MainWindow::applySettings(TerminalWidget* term) {
     if (!fam.isEmpty()) f.setFamily(fam);
     f.setPointSize(m_settings.fontSize());
     term->setTerminalFont(f);
+    term->setSyntaxHighlighting(m_syntaxHighlight);
 }
 
 } // namespace macxterm::ui

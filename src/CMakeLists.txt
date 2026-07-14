@@ -15,6 +15,7 @@ add_library(macxterm_core STATIC
   term/ScreenBuffer.cpp
   term/VtEngine.cpp
   term/ColorScheme.cpp
+  term/SyntaxHighlighter.cpp
   connect/IConnection.cpp
   connect/LocalShellConnection.cpp
   connect/SshConnection.cpp

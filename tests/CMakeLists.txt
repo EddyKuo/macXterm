@@ -51,6 +51,7 @@ set(MACXTERM_TESTS
   test_scrollback
   test_osc
   test_socks
+  test_highlighter
 )
 
 foreach(t ${MACXTERM_TESTS})
