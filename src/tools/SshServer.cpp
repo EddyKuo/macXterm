@@ -20,6 +20,8 @@
 #include <ctime>
 #include <string>
 #include <cstdint>
+#include <atomic>
+#include <chrono>
 
 #if defined(__APPLE__)
 #include <util.h>        // forkpty on macOS
@@ -220,10 +222,25 @@ void runSftp(ssh_session session, ssh_channel chan, const QString& root) {
     sftp_free(sftp);
 }
 
-// Handle one accepted SSH session start-to-finish (blocking).
+// Handle one accepted SSH session start-to-finish. The key exchange runs in
+// non-blocking mode with a stop-flag + deadline so a half-open client (or
+// server shutdown) can't wedge the handler thread — otherwise stop() would hang
+// joining it. After a successful handshake the session goes back to blocking for
+// the auth/shell/sftp phase.
 void handleSession(ssh_session session, const std::string& user, const std::string& pass,
-                   const QString& root) {
-    if (ssh_handle_key_exchange(session) != SSH_OK) { ssh_disconnect(session); ssh_free(session); return; }
+                   const QString& root, const std::atomic<bool>* stop) {
+    ssh_set_blocking(session, 0);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    int rc;
+    while ((rc = ssh_handle_key_exchange(session)) == SSH_AGAIN) {
+        if ((stop && stop->load()) || !ssh_is_connected(session) ||
+            std::chrono::steady_clock::now() > deadline) {
+            ssh_disconnect(session); ssh_free(session); return;
+        }
+        struct timespec ts{0, 10'000'000}; nanosleep(&ts, nullptr);   // 10ms
+    }
+    if (rc != SSH_OK) { ssh_disconnect(session); ssh_free(session); return; }
+    ssh_set_blocking(session, 1);
 
     // Password authentication.
     bool authed = false;
@@ -315,16 +332,31 @@ void SshServer::acceptLoop() {
     if (ssh_bind_listen(sshbind) != SSH_OK) {
         ssh_bind_free(sshbind); m_running = false; return;
     }
-    // Non-blocking accept so we can honor stop().
+    // Poll the listening fd ourselves with a timeout so the loop can honor
+    // stop() promptly — ssh_bind_set_blocking(0) does not reliably make
+    // ssh_bind_accept()'s underlying accept() non-blocking on all platforms, and
+    // a blocked accept() would wedge this thread against join() in stop().
+    const socket_t bindFd = ssh_bind_get_fd(sshbind);
     ssh_bind_set_blocking(sshbind, 0);
     const std::string user = m_user.toStdString(), pass = m_pass.toStdString();
     const QString root = m_root;
 
     while (!m_stop.load()) {
+        struct pollfd pfd{bindFd, POLLIN, 0};
+        if (::poll(&pfd, 1, 200) <= 0) continue;     // recheck m_stop every 200ms
+        if (!(pfd.revents & POLLIN)) continue;
         ssh_session session = ssh_new();
         const int rc = ssh_bind_accept(sshbind, session);
         if (rc == SSH_OK) {
-            std::thread(handleSession, session, user, pass, root).detach();
+            // Track the handler thread (so stop() can join it — detaching left
+            // handshakes running against freed state on shutdown → SIGABRT) and
+            // its socket fd (so stop() can shutdown() it to unblock a blocked
+            // read → otherwise the join would hang).
+            const int fd = ssh_get_fd(session);
+            auto t = std::make_shared<std::thread>(handleSession, session, user, pass, root, &m_stop);
+            std::lock_guard<std::mutex> lock(m_sessionsMutex);
+            m_sessions.push_back(std::move(t));
+            m_sessionFds.push_back(fd);
         } else {
             ssh_free(session);
             struct timespec ts{0, 50'000'000}; nanosleep(&ts, nullptr);
@@ -336,8 +368,19 @@ void SshServer::acceptLoop() {
 
 void SshServer::stop() {
     m_stop = true;
-    if (m_thread && m_thread->joinable()) m_thread->join();
+    if (m_thread && m_thread->joinable()) m_thread->join();   // accept loop: no more sessions added
     m_thread.reset();
+    // Unblock any handler stuck in a blocking libssh read by shutting down its
+    // socket, then join them so no thread outlives the server.
+    std::vector<std::shared_ptr<std::thread>> sessions;
+    std::vector<int> fds;
+    {
+        std::lock_guard<std::mutex> lock(m_sessionsMutex);
+        sessions.swap(m_sessions);
+        fds.swap(m_sessionFds);
+    }
+    for (int fd : fds) if (fd >= 0) ::shutdown(fd, SHUT_RDWR);
+    for (auto& t : sessions) if (t && t->joinable()) t->join();
     m_running = false;
 }
 

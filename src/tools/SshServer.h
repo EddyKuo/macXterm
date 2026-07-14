@@ -4,6 +4,8 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <vector>
+#include <mutex>
 
 namespace macxterm::tools {
 
@@ -34,6 +36,9 @@ private:
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_stop{false};
     std::shared_ptr<std::thread> m_thread;
+    std::vector<std::shared_ptr<std::thread>> m_sessions;   // per-connection handlers
+    std::vector<int> m_sessionFds;                          // their sockets (to unblock on stop)
+    std::mutex m_sessionsMutex;
     quint16 m_port = 0;
     QString m_user, m_pass, m_root;
 };
