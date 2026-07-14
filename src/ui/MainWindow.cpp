@@ -13,7 +13,10 @@
 #include "ui/TunnelDialog.h"
 #include "ui/VaultDialog.h"
 #include "ui/SftpPanel.h"
+#include "ui/RdpSurfaceWidget.h"
 #include "core/Settings.h"
+#include <QTimer>
+#include <QImage>
 #include <QTabWidget>
 #include <QTabBar>
 #include <QTreeWidget>
@@ -243,11 +246,56 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
 }
 
 TerminalWidget* MainWindow::openSession(const core::Session& session) {
+    // RDP/VNC render their own graphics surface, not a VT stream.
+    if (session.type() == core::SessionType::Rdp || session.type() == core::SessionType::Vnc) {
+        openGraphicalSession(session);
+        return nullptr;
+    }
     TerminalWidget* term = makePane(session);
     const int idx = m_tabs->addTab(term, session.name());
     m_tabs->setCurrentIndex(idx);
     term->setFocus();
     return term;
+}
+
+void MainWindow::openGraphicalSession(const core::Session& session) {
+    auto* surface = new RdpSurfaceWidget(m_tabs);
+
+    if (session.type() == core::SessionType::Vnc) {
+        auto* vnc = new connect::VncConnection(surface);
+        connect(vnc, &connect::VncConnection::serverReady, surface,
+                [surface](int w, int h, const QString&) {
+                    QImage img(w, h, QImage::Format_ARGB32);
+                    img.fill(Qt::black);
+                    surface->setFrame(img);
+                });
+        connect(vnc, &connect::VncConnection::rectDecoded, surface,
+                [surface](int x, int y, int w, int h, const QList<quint32>& px) {
+                    if (px.size() < w * h) return;
+                    QImage tile(w, h, QImage::Format_ARGB32);
+                    for (int r = 0; r < h; ++r)
+                        for (int c = 0; c < w; ++c)
+                            tile.setPixel(c, r, px[r * w + c]);
+                    surface->updateRect(x, y, tile);
+                });
+        vnc->connectSession(session);
+    } else {  // RDP
+        auto* rdp = new connect::RdpConnection(surface);
+        if (rdp->connectSession(session)) {
+            // Pump the FreeRDP event loop and refresh the surface periodically.
+            auto* timer = new QTimer(surface);
+            connect(timer, &QTimer::timeout, surface, [rdp, surface, timer] {
+                if (!rdp->poll()) { timer->stop(); return; }
+                const QImage f = rdp->currentFrame();
+                if (!f.isNull()) surface->setFrame(f);
+            });
+            timer->start(33);   // ~30 fps
+        }
+    }
+
+    const int idx = m_tabs->addTab(surface, session.name());
+    m_tabs->setCurrentIndex(idx);
+    surface->setFocus();
 }
 
 TerminalWidget* MainWindow::currentPane() const {

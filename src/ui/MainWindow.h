@@ -46,6 +46,7 @@ private:
     void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
     void showSftpFor(const core::Session& session);
+    void openGraphicalSession(const core::Session& session);  // RDP/VNC surface tab
     TerminalWidget* makePane(const core::Session& session);   // create+connect, no tab
     TerminalWidget* currentPane() const;                      // focused pane of current tab
     void broadcastInput(const QByteArray& bytes);             // MultiExec fan-out
