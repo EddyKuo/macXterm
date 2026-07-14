@@ -16,6 +16,8 @@
 #include "ui/RdpSurfaceWidget.h"
 #include "ui/PortScannerDialog.h"
 #include "ui/KeyGenDialog.h"
+#include "ui/TextEditorDialog.h"
+#include "ui/ServersDialog.h"
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
 #include <QTimer>
@@ -23,6 +25,7 @@
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QTabWidget>
 #include <QTabBar>
 #include <QTreeWidget>
@@ -124,6 +127,27 @@ void MainWindow::buildMenus() {
     });
     tools->addAction(QStringLiteral("SSH Key Generator…"), this, [this] {
         auto* dlg = new KeyGenDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    tools->addSeparator();
+    tools->addAction(QStringLiteral("Text Editor…"), this, [this] {
+        auto* dlg = new TextEditorDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Compare Files…"), this, [this] {
+        const QString a = QFileDialog::getOpenFileName(this, QStringLiteral("First file"));
+        if (a.isEmpty()) return;
+        const QString b = QFileDialog::getOpenFileName(this, QStringLiteral("Second file"));
+        if (b.isEmpty()) return;
+        auto* dlg = new TextEditorDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->showDiff(a, b);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Light Servers…"), this, [this] {
+        auto* dlg = new ServersDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });

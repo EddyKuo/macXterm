@@ -85,6 +85,8 @@ if(MACXTERM_BUILD_GUI)
     ui/SftpPanel.cpp
     ui/PortScannerDialog.cpp
     ui/KeyGenDialog.cpp
+    ui/TextEditorDialog.cpp
+    ui/ServersDialog.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   set_target_properties(macxterm PROPERTIES
