@@ -18,13 +18,17 @@ public:
 
 private slots:
     void scan();
+    void scanSubnet();   // find live hosts across a CIDR block on a chosen port
 
 private:
     QLineEdit* m_host = nullptr;
     QSpinBox* m_from = nullptr;
     QSpinBox* m_to = nullptr;
+    QLineEdit* m_cidr = nullptr;
+    QSpinBox* m_probePort = nullptr;
     QListWidget* m_results = nullptr;
     QPushButton* m_scanBtn = nullptr;
+    QPushButton* m_subnetBtn = nullptr;
     tools::PortScanner m_scanner;
 };
 

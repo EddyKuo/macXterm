@@ -52,6 +52,8 @@ set(MACXTERM_TESTS
   test_osc
   test_socks
   test_highlighter
+  test_subnet
+  test_folderdiff
 )
 
 foreach(t ${MACXTERM_TESTS})

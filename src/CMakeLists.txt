@@ -39,6 +39,8 @@ add_library(macxterm_core STATIC
   tools/SshExec.cpp
   tools/TftpPacket.cpp
   tools/TextDiff.cpp
+  tools/FolderDiff.cpp
+  tools/Subnet.cpp
   tools/AwsSigV4.cpp
   tools/S3Client.cpp
   tools/HttpServer.cpp
@@ -94,6 +96,9 @@ if(MACXTERM_BUILD_GUI)
     ui/TextEditorDialog.cpp
     ui/ServersDialog.cpp
     ui/RemoteMonitorBar.cpp
+    ui/ImageViewerDialog.cpp
+    ui/FolderDiffDialog.cpp
+    ui/ColorSchemeDialog.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   set_target_properties(macxterm PROPERTIES

@@ -19,6 +19,9 @@
 #include "ui/KeyGenDialog.h"
 #include "ui/TextEditorDialog.h"
 #include "ui/ServersDialog.h"
+#include "ui/ImageViewerDialog.h"
+#include "ui/FolderDiffDialog.h"
+#include "ui/ColorSchemeDialog.h"
 #include "ui/RemoteMonitorBar.h"
 #include "tools/S3Client.h"
 #include <QListWidget>
@@ -226,6 +229,29 @@ void MainWindow::buildMenus() {
         auto* dlg = new TextEditorDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->showDiff(a, b);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Compare Folders…"), this, [this] {
+        auto* dlg = new FolderDiffDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Image Viewer…"), this, [this] {
+        const QString p = QFileDialog::getOpenFileName(this, QStringLiteral("Open image"),
+            QString(), QStringLiteral("Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.svg)"));
+        if (p.isEmpty()) return;
+        auto* dlg = new ImageViewerDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->openImage(p);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Color Scheme Editor…"), this, [this] {
+        TerminalWidget* pane = currentPane();
+        const term::ColorScheme start = term::ColorScheme::byName(m_settings.colorScheme());
+        auto* dlg = new ColorSchemeDialog(start, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        if (pane)
+            connect(dlg, &ColorSchemeDialog::schemeChosen, pane, &TerminalWidget::setColorScheme);
         dlg->show();
     });
     tools->addAction(QStringLiteral("Light Servers…"), this, [this] {
