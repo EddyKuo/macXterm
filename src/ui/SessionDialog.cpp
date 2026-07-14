@@ -47,6 +47,9 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_passphrase = new QLineEdit(this);
     m_passphrase->setEchoMode(QLineEdit::Password);
 
+    m_gateway = new QLineEdit(this);
+    m_gateway->setPlaceholderText(QStringLiteral("[user@]host[:port] — optional jump host"));
+
     form->addRow(QStringLiteral("Name"), m_name);
     form->addRow(QStringLiteral("Type"), m_type);
     form->addRow(QStringLiteral("Host"), m_host);
@@ -55,6 +58,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(QStringLiteral("Password"), m_password);
     form->addRow(QStringLiteral("Private key"), keyRow);
     form->addRow(QStringLiteral("Key passphrase"), m_passphrase);
+    form->addRow(QStringLiteral("SSH gateway"), m_gateway);
 
     // Show only the auth fields relevant to the selected session type.
     auto updateVisibility = [this, form, keyRow] {
@@ -65,6 +69,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         form->setRowVisible(m_password, net && t != core::SessionType::Mosh);
         form->setRowVisible(keyRow, key);
         form->setRowVisible(m_passphrase, key);
+        form->setRowVisible(m_gateway, key);
     };
     connect(m_type, &QComboBox::currentTextChanged, this, [updateVisibility](const QString&){ updateVisibility(); });
     updateVisibility();
@@ -95,6 +100,7 @@ void SessionDialog::setSession(const core::Session& s) {
     m_password->setText(s.param("password"));
     m_keyfile->setText(s.param("keyfile"));
     m_passphrase->setText(s.param("passphrase"));
+    m_gateway->setText(s.param("gateway"));
 }
 
 core::Session SessionDialog::session() const {
@@ -107,6 +113,7 @@ core::Session SessionDialog::session() const {
     if (!m_password->text().isEmpty())   f.insert("password", m_password->text());
     if (!m_keyfile->text().isEmpty())    f.insert("keyfile", m_keyfile->text());
     if (!m_passphrase->text().isEmpty()) f.insert("passphrase", m_passphrase->text());
+    if (!m_gateway->text().isEmpty())    f.insert("gateway", m_gateway->text());
     return core::SessionForm::toSession(f);
 }
 

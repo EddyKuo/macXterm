@@ -34,6 +34,7 @@ private:
     QLineEdit* m_password = nullptr;
     QLineEdit* m_keyfile = nullptr;
     QLineEdit* m_passphrase = nullptr;
+    QLineEdit* m_gateway = nullptr;   // SSH jump host: [user@]host[:port]
 };
 
 } // namespace macxterm::ui

@@ -11,19 +11,25 @@ class QTcpServer;
 
 namespace macxterm::tunnel {
 
-// A real SSH local tunnel: listens on bind:bindPort and forwards each accepted
-// connection through an SSH direct-tcpip channel to target:targetPort. Each
-// accepted client is handled on its own worker thread doing a blocking relay
-// between the client socket and a libssh2 channel (keeps libssh2's blocking I/O
-// off the Qt event loop). The SSH server + credentials come from a Session.
+// A real SSH tunnel supporting all three MobaXterm kinds:
+//   - Local (-L):   listen on bind:bindPort, forward each connection through an
+//                   SSH direct-tcpip channel to target:targetPort.
+//   - Dynamic (-D): listen on bind:bindPort as a SOCKS4/4a/5 proxy; the target
+//                   is negotiated per-connection and forwarded via direct-tcpip.
+//   - Remote (-R):  ask the SSH server to listen on bind:bindPort and forward
+//                   accepted channels back to a locally-dialed target:targetPort.
+// Local/Dynamic run a QTcpServer with one worker thread per accepted client
+// (each opens its own libssh2 session — safe). Remote runs a single listener
+// worker that multiplexes all forwarded channels on one session (libssh2
+// sessions are not thread-safe). The SSH server + credentials come from a Session.
 class SshTunnel : public QObject {
     Q_OBJECT
 public:
     explicit SshTunnel(QObject* parent = nullptr);
     ~SshTunnel() override;
 
-    // Open the SSH gateway session and start listening. Currently supports Local
-    // tunnels. Returns false on listen/auth failure.
+    // Open the SSH gateway session and start the tunnel. Supports Local, Dynamic
+    // and Remote kinds. Returns false on listen/auth failure.
     bool start(const core::Session& sshServer, const Tunnel& tunnel);
     void stop();
     bool isRunning() const;
@@ -41,6 +47,7 @@ private:
     Tunnel m_tunnel;
     std::atomic<bool> m_stopping{false};
     std::vector<std::shared_ptr<std::thread>> m_workers;
+    std::shared_ptr<std::thread> m_remoteListener;   // Remote (-R) accept loop
 };
 
 } // namespace macxterm::tunnel

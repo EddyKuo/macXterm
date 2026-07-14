@@ -4,6 +4,8 @@
 #include <QByteArray>
 #include <libssh2.h>
 #include <cstdio>
+#include <thread>
+#include <atomic>
 
 #if !defined(_WIN32)
 #include <sys/socket.h>
@@ -14,6 +16,7 @@
 #include <fcntl.h>
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 #endif
 
 namespace macxterm::connect {
@@ -110,6 +113,111 @@ static int openSocket(const QByteArray& host, int port) {
     return fd;
 }
 
+// SSH-over-SSH gateway state: a gateway session whose direct-tcpip channel to
+// the target is bridged to a local socketpair; the target session then runs its
+// own handshake over that socketpair fd. A pump thread moves bytes between the
+// socketpair and the gateway channel.
+struct SshConnection::JumpRelay {
+    LIBSSH2_SESSION* gwSession = nullptr;
+    LIBSSH2_CHANNEL* gwChannel = nullptr;
+    int gwSock = -1;
+    int pumpEnd = -1;               // socketpair end serviced by the pump thread
+    std::atomic<bool> stop{false};
+    std::thread pump;
+};
+
+int SshConnection::openViaJump(const core::Session& session) {
+    // Gateway spec: "[user@]host[:port]" in param "gateway". Empty → no jump.
+    QString spec = session.param("gateway");
+    if (spec.isEmpty()) return -1;
+
+    QString gwUser = session.username();
+    if (const int at = spec.indexOf('@'); at >= 0) { gwUser = spec.left(at); spec = spec.mid(at + 1); }
+    QString gwHost = spec;
+    int gwPort = 22;
+    if (const int col = spec.indexOf(':'); col >= 0) {
+        gwHost = spec.left(col);
+        gwPort = spec.mid(col + 1).toInt();
+        if (gwPort <= 0) gwPort = 22;
+    }
+    if (!session.param("gateway_user").isEmpty()) gwUser = session.param("gateway_user");
+
+    const int gwSock = openSocket(gwHost.toUtf8(), gwPort);
+    if (gwSock < 0) { emit errorOccurred("Gateway: connect failed"); return -1; }
+    LIBSSH2_SESSION* gw = libssh2_session_init();
+    if (!gw) { ::close(gwSock); return -1; }
+    libssh2_session_set_blocking(gw, 1);
+    if (libssh2_session_handshake(gw, gwSock) != 0) {
+        emit errorOccurred("Gateway: SSH handshake failed");
+        libssh2_session_free(gw); ::close(gwSock); return -1;
+    }
+    // Gateway auth: prefer gateway_* creds, else fall back to the target's.
+    const QByteArray gu = gwUser.toUtf8();
+    const QByteArray gkey = session.param("gateway_keyfile").toUtf8();
+    bool authed;
+    if (!gkey.isEmpty()) {
+        const QByteArray gpass = session.param("gateway_passphrase").toUtf8();
+        authed = libssh2_userauth_publickey_fromfile(gw, gu.constData(), nullptr,
+                                                     gkey.constData(), gpass.constData()) == 0;
+    } else {
+        QByteArray gpw = session.param("gateway_password").toUtf8();
+        if (gpw.isEmpty()) gpw = session.param("password").toUtf8();
+        authed = libssh2_userauth_password(gw, gu.constData(), gpw.constData()) == 0;
+    }
+    if (!authed) {
+        emit errorOccurred("Gateway: authentication failed");
+        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); ::close(gwSock);
+        return -1;
+    }
+    // Open a direct-tcpip channel from the gateway to the real target.
+    LIBSSH2_CHANNEL* ch = libssh2_channel_direct_tcpip_ex(
+        gw, session.host().toUtf8().constData(), session.port(), "127.0.0.1", 0);
+    if (!ch) {
+        emit errorOccurred("Gateway: could not open channel to target");
+        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); ::close(gwSock);
+        return -1;
+    }
+    // Bridge the channel to a socketpair; hand one end to the target session.
+    int sp[2];
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sp) != 0) {
+        libssh2_channel_free(ch);
+        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); ::close(gwSock);
+        return -1;
+    }
+    libssh2_session_set_blocking(gw, 0);
+    m_jump = new JumpRelay;
+    m_jump->gwSession = gw;
+    m_jump->gwChannel = ch;
+    m_jump->gwSock = gwSock;
+    m_jump->pumpEnd = sp[1];
+    JumpRelay* jr = m_jump;
+    jr->pump = std::thread([jr] {
+        char buf[16384];
+        ::fcntl(jr->pumpEnd, F_SETFL, O_NONBLOCK);
+        while (!jr->stop.load()) {
+            bool idle = true;
+            // socketpair -> channel
+            const ssize_t r = ::recv(jr->pumpEnd, buf, sizeof(buf), 0);
+            if (r > 0) {
+                idle = false;
+                int off = 0;
+                while (off < r) {
+                    const ssize_t w = libssh2_channel_write(jr->gwChannel, buf + off, r - off);
+                    if (w == LIBSSH2_ERROR_EAGAIN) continue;
+                    if (w < 0) break;
+                    off += w;
+                }
+            } else if (r == 0) { break; }
+            // channel -> socketpair
+            const ssize_t n = libssh2_channel_read(jr->gwChannel, buf, sizeof(buf));
+            if (n > 0) { idle = false; ::send(jr->pumpEnd, buf, n, 0); }
+            else if (n == 0 && libssh2_channel_eof(jr->gwChannel)) break;
+            if (idle) { struct timespec ts{0, 3'000'000}; nanosleep(&ts, nullptr); }
+        }
+    });
+    return sp[0];   // target session's socket fd
+}
+
 bool SshConnection::doHandshakeAndAuth(const core::Session& session) {
     if (libssh2_session_handshake(m_session, m_sock) != 0) {
         emit errorOccurred("SSH handshake failed");
@@ -139,7 +247,14 @@ bool SshConnection::doHandshakeAndAuth(const core::Session& session) {
 bool SshConnection::connectSession(const core::Session& session) {
     setState(State::Connecting);
 
-    m_sock = openSocket(session.host().toUtf8(), session.port());
+    // If a gateway/jump host is configured, tunnel through it; otherwise dial the
+    // target directly.
+    if (!session.param("gateway").isEmpty()) {
+        m_sock = openViaJump(session);
+        if (m_sock < 0) { setState(State::Failed); return false; }
+    } else {
+        m_sock = openSocket(session.host().toUtf8(), session.port());
+    }
     if (m_sock < 0) {
         setState(State::Failed);
         emit errorOccurred("Failed to connect socket");
@@ -293,6 +408,19 @@ void SshConnection::cleanup() {
     }
 #if !defined(_WIN32)
     if (m_sock >= 0) { ::close(m_sock); m_sock = -1; }
+    if (m_jump) {
+        m_jump->stop.store(true);
+        if (m_jump->pump.joinable()) m_jump->pump.join();
+        if (m_jump->gwChannel) libssh2_channel_free(m_jump->gwChannel);
+        if (m_jump->gwSession) {
+            libssh2_session_disconnect(m_jump->gwSession, "bye");
+            libssh2_session_free(m_jump->gwSession);
+        }
+        if (m_jump->pumpEnd >= 0) ::close(m_jump->pumpEnd);
+        if (m_jump->gwSock >= 0) ::close(m_jump->gwSock);
+        delete m_jump;
+        m_jump = nullptr;
+    }
 #endif
 }
 

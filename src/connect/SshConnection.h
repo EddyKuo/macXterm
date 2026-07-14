@@ -38,14 +38,21 @@ private:
     bool doHandshakeAndAuth(const core::Session& session);
     void cleanup();
     void pumpX11();
+    // SSH gateway / jump host (ProxyJump): connect the gateway, open a
+    // direct-tcpip channel to the target, and return a local socket fd (backed
+    // by a relay thread) that the target session runs its handshake over.
+    // Returns -1 on failure. No-op unless the session has a "gateway" param.
+    int openViaJump(const core::Session& session);
 
     struct X11Fwd { LIBSSH2_CHANNEL* chan; int xsock; QSocketNotifier* notifier; };
+    struct JumpRelay;   // defined in the .cpp
 
     int m_sock = -1;
     LIBSSH2_SESSION* m_session = nullptr;
     LIBSSH2_CHANNEL* m_channel = nullptr;
     QSocketNotifier* m_notifier = nullptr;
     std::vector<X11Fwd> m_x11;
+    JumpRelay* m_jump = nullptr;
     int m_cols = 80;
     int m_rows = 24;
 };

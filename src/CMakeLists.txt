@@ -32,6 +32,7 @@ add_library(macxterm_core STATIC
   tunnel/TunnelForm.cpp
   tunnel/LocalForwarder.cpp
   tunnel/SshTunnel.cpp
+  tunnel/Socks.cpp
   tools/PortScanner.cpp
   tools/RemoteMonitor.cpp
   tools/SshExec.cpp
