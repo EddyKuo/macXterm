@@ -14,6 +14,7 @@
 #include "ui/VaultDialog.h"
 #include "ui/SftpPanel.h"
 #include "ui/RdpSurfaceWidget.h"
+#include "ui/PortScannerDialog.h"
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
 #include <QTimer>
@@ -27,6 +28,8 @@
 #include <QToolBar>
 #include <QAction>
 #include <QKeyEvent>
+#include <QLineEdit>
+#include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QStandardPaths>
@@ -103,6 +106,13 @@ void MainWindow::buildMenus() {
     view->addAction(QStringLiteral("Full Screen"), this, [this] {
         setWindowState(windowState() ^ Qt::WindowFullScreen);
     })->setShortcut(Qt::Key_F11);
+
+    QMenu* tools = menuBar()->addMenu(QStringLiteral("&Tools"));
+    tools->addAction(QStringLiteral("Port Scanner…"), this, [this] {
+        auto* dlg = new PortScannerDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
 
     QMenu* help = menuBar()->addMenu(QStringLiteral("&Help"));
     help->addAction(QStringLiteral("About macXterm"), this, [this] {
@@ -202,6 +212,33 @@ void MainWindow::buildToolbar() {
         VaultDialog dlg(VaultDialog::Mode::Unlock, this);
         dlg.exec();
     });
+
+    // Quick-connect bar: type "user@host[:port]" and press Enter to SSH.
+    tb->addSeparator();
+    tb->addWidget(new QLabel(QStringLiteral(" Quick connect: "), this));
+    auto* quick = new QLineEdit(this);
+    quick->setPlaceholderText(QStringLiteral("user@host:port"));
+    quick->setClearButtonEnabled(true);
+    quick->setMaximumWidth(240);
+    connect(quick, &QLineEdit::returnPressed, this, [this, quick] {
+        const QString text = quick->text().trimmed();
+        if (text.isEmpty()) return;
+        core::Session s(text, core::SessionType::Ssh);
+        QString rest = text;
+        if (const int at = rest.indexOf('@'); at >= 0) {
+            s.setUsername(rest.left(at));
+            rest = rest.mid(at + 1);
+        }
+        if (const int colon = rest.indexOf(':'); colon >= 0) {
+            s.setHost(rest.left(colon));
+            s.setPort(rest.mid(colon + 1).toInt());
+        } else {
+            s.setHost(rest);
+        }
+        quick->clear();
+        openSession(s);
+    });
+    tb->addWidget(quick);
 }
 
 void MainWindow::reloadSessionTree() {
