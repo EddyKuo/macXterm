@@ -66,6 +66,11 @@ void TerminalWidget::feedInput(const QByteArray& bytes) {
     if (m_conn) m_conn->send(bytes);
 }
 
+void TerminalWidget::sendInput(const QByteArray& bytes) {
+    if (m_inputHandler) m_inputHandler(bytes);   // MultiExec broadcast
+    else if (m_conn) m_conn->send(bytes);
+}
+
 void TerminalWidget::recomputeGrid() {
     const int cols = std::max(1, width() / m_cellW);
     const int rows = std::max(1, height() / m_cellH);
@@ -192,7 +197,7 @@ void TerminalWidget::keyPressEvent(QKeyEvent* e) {
         case Qt::Key_Left:     out = "\x1b[D"; break;
         default:               out = e->text().toUtf8(); break;
     }
-    if (!out.isEmpty()) m_conn->send(out);
+    if (!out.isEmpty()) sendInput(out);
 }
 
 // ── mouse selection ──
@@ -267,7 +272,7 @@ void TerminalWidget::paste() {
     const QString text = QApplication::clipboard()->text();
     if (!text.isEmpty()) {
         if (m_scrollOffset != 0) { m_scrollOffset = 0; update(); }
-        m_conn->send(text.toUtf8());
+        sendInput(text.toUtf8());
     }
 }
 

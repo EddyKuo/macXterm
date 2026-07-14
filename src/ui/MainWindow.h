@@ -27,6 +27,8 @@ public:
     TerminalWidget* openLocalShell();
     // Open a new tab for a saved session (SSH/local for now).
     TerminalWidget* openSession(const core::Session& session);
+    // Split the current tab, adding another pane (same session or local shell).
+    void splitCurrent(Qt::Orientation orientation);
 
 public slots:
     void toggleMultiExec(bool on);
@@ -44,6 +46,9 @@ private:
     void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
     void showSftpFor(const core::Session& session);
+    TerminalWidget* makePane(const core::Session& session);   // create+connect, no tab
+    TerminalWidget* currentPane() const;                      // focused pane of current tab
+    void broadcastInput(const QByteArray& bytes);             // MultiExec fan-out
 
     QTabWidget* m_tabs = nullptr;
     QTreeWidget* m_tree = nullptr;

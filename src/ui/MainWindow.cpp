@@ -27,6 +27,7 @@
 #include <QDir>
 #include <QSettings>
 #include <QFont>
+#include <QSplitter>
 #include "term/ColorScheme.h"
 
 namespace macxterm::ui {
@@ -43,7 +44,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_tabs->setStyleSheet(QStringLiteral("QTabWidget::tab-bar { alignment: left; }"));
     connect(m_tabs, &QTabWidget::tabCloseRequested, m_tabs, [this](int i) {
         QWidget* w = m_tabs->widget(i);
+        // Drop session mappings for this tab's pane(s) — the tab may be a single
+        // pane or a splitter holding several.
         m_tabSessions.remove(w);
+        for (QObject* child : w->findChildren<QObject*>())
+            m_tabSessions.remove(qobject_cast<QWidget*>(child));
         m_tabs->removeTab(i);
         w->deleteLater();
     });
@@ -87,6 +92,11 @@ void MainWindow::buildToolbar() {
         }
     });
 
+    auto* splitH = tb->addAction(QStringLiteral("Split →"));
+    connect(splitH, &QAction::triggered, this, [this] { splitCurrent(Qt::Horizontal); });
+    auto* splitV = tb->addAction(QStringLiteral("Split ↓"));
+    connect(splitV, &QAction::triggered, this, [this] { splitCurrent(Qt::Vertical); });
+
     auto* multi = tb->addAction(QStringLiteral("MultiExec"));
     multi->setCheckable(true);
     connect(multi, &QAction::toggled, this, &MainWindow::toggleMultiExec);
@@ -94,8 +104,8 @@ void MainWindow::buildToolbar() {
     auto* tunnels = tb->addAction(QStringLiteral("Tunnel"));
     connect(tunnels, &QAction::triggered, this, [this] {
         // The tunnel is established through the currently-active SSH tab.
-        QWidget* cur = m_tabs->currentWidget();
-        const core::Session sshSession = m_tabSessions.value(cur);
+        TerminalWidget* pane = currentPane();
+        const core::Session sshSession = pane ? m_tabSessions.value(pane) : core::Session();
         if (sshSession.type() != core::SessionType::Ssh) {
             QMessageBox::information(this, QStringLiteral("SSH Tunnel"),
                 QStringLiteral("Open and select an SSH session tab first — the tunnel is "
@@ -204,7 +214,7 @@ TerminalWidget* MainWindow::openLocalShell() {
     return openSession(s);
 }
 
-TerminalWidget* MainWindow::openSession(const core::Session& session) {
+TerminalWidget* MainWindow::makePane(const core::Session& session) {
     auto* term = new TerminalWidget(m_tabs);
     connect::IConnection* conn = nullptr;
     switch (session.type()) {
@@ -222,15 +232,65 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
     }
     term->attach(conn);
     applySettings(term);
-    m_tabSessions.insert(term, session);   // remember which session drives this tab
-    const int idx = m_tabs->addTab(term, session.name());
-    m_tabs->setCurrentIndex(idx);
+    m_tabSessions.insert(term, session);
+    if (m_multiExec)
+        term->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
     conn->connectSession(session);
-    term->setFocus();
 
     // Show the SFTP browser for connections that support it (SSH/SFTP).
     if (conn->capabilities().sftp) showSftpFor(session);
     return term;
+}
+
+TerminalWidget* MainWindow::openSession(const core::Session& session) {
+    TerminalWidget* term = makePane(session);
+    const int idx = m_tabs->addTab(term, session.name());
+    m_tabs->setCurrentIndex(idx);
+    term->setFocus();
+    return term;
+}
+
+TerminalWidget* MainWindow::currentPane() const {
+    QWidget* cur = m_tabs->currentWidget();
+    if (auto* t = qobject_cast<TerminalWidget*>(cur)) return t;
+    if (cur) {
+        // A focused pane inside a splitter, else the first one.
+        const auto panes = cur->findChildren<TerminalWidget*>();
+        for (TerminalWidget* p : panes) if (p->hasFocus()) return p;
+        if (!panes.isEmpty()) return panes.first();
+    }
+    return nullptr;
+}
+
+void MainWindow::broadcastInput(const QByteArray& bytes) {
+    for (TerminalWidget* p : m_tabs->findChildren<TerminalWidget*>())
+        if (p->multiExecEnabled()) p->feedInput(bytes);
+}
+
+void MainWindow::splitCurrent(Qt::Orientation orientation) {
+    QWidget* cur = m_tabs->currentWidget();
+    if (!cur) return;
+    const int idx = m_tabs->currentIndex();
+    const QString title = m_tabs->tabText(idx);
+
+    // The new pane mirrors the current pane's session (or a local shell).
+    TerminalWidget* refPane = currentPane();
+    const core::Session s = refPane ? m_tabSessions.value(refPane,
+                                        core::Session(QStringLiteral("local"), core::SessionType::Shell))
+                                    : core::Session(QStringLiteral("local"), core::SessionType::Shell);
+    TerminalWidget* pane = makePane(s);
+
+    if (auto* existing = qobject_cast<QSplitter*>(cur)) {
+        existing->addWidget(pane);
+    } else {
+        m_tabs->removeTab(idx);
+        auto* split = new QSplitter(orientation, m_tabs);
+        split->addWidget(cur);
+        split->addWidget(pane);
+        m_tabs->insertTab(idx, split, title);
+        m_tabs->setCurrentIndex(idx);
+    }
+    pane->setFocus();
 }
 
 void MainWindow::showSftpFor(const core::Session& session) {
@@ -246,6 +306,11 @@ void MainWindow::showSftpFor(const core::Session& session) {
 
 void MainWindow::toggleMultiExec(bool on) {
     m_multiExec = on;
+    // Route (or unroute) every pane's input through the broadcaster.
+    for (TerminalWidget* p : m_tabs->findChildren<TerminalWidget*>()) {
+        if (on) p->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
+        else    p->setInputHandler(nullptr);
+    }
 }
 
 void MainWindow::loadSettings() {

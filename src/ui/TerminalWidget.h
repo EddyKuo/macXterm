@@ -5,6 +5,7 @@
 #include <QWidget>
 #include <QFont>
 #include <QPoint>
+#include <functional>
 
 class QKeyEvent;
 class QMouseEvent;
@@ -27,8 +28,15 @@ public:
     bool multiExecEnabled() const { return m_multiExec; }
     void setMultiExecEnabled(bool on) { m_multiExec = on; }
 
-    // Inject input as if typed (used by MultiExec broadcast).
+    // Inject input straight to this pane's connection (used by MultiExec
+    // broadcast to deliver the same keystrokes to every pane).
     void feedInput(const QByteArray& bytes);
+
+    // When set, user keystrokes/paste are routed here instead of straight to
+    // this pane's own connection (MultiExec). Clear to restore normal routing.
+    void setInputHandler(std::function<void(const QByteArray&)> handler) {
+        m_inputHandler = std::move(handler);
+    }
 
     // Appearance.
     void setColorScheme(const term::ColorScheme& scheme);
@@ -65,6 +73,9 @@ private:
     int m_cellH = 16;
     bool m_multiExec = true;
 
+    void sendInput(const QByteArray& bytes);   // routes via handler or own conn
+
+    std::function<void(const QByteArray&)> m_inputHandler;
     int m_scrollOffset = 0;               // 0 = live bottom; >0 = scrolled up
     bool m_selecting = false;
     bool m_hasSelection = false;
