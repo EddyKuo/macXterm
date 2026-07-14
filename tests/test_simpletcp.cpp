@@ -1,5 +1,8 @@
 #include "connect/SimpleTcpConnection.h"
+#include "connect/IConnection.h"
 #include <QtTest/QtTest>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 using namespace macxterm;
 
@@ -30,7 +33,44 @@ private slots:
             core::SessionType::Xdmcp, s);
         QCOMPARE(h.size(), 4);
     }
+
+    // Connect a live Rlogin session to a local server: the client end sends the
+    // rlogin handshake and receives server bytes — covers connect/send/read/
+    // disconnect. Uses the connection's own dataReceived to observe the round
+    // trip (the server echoes), which is driven by the client's event loop.
+    void connectsToLocalServer() {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+            QTcpSocket* c = server.nextPendingConnection();
+            QObject::connect(c, &QTcpSocket::readyRead, c, [c] {
+                c->readAll();                    // consume the handshake / input
+                c->write("server-hello");        // and reply to the client
+                c->flush();
+            });
+        });
+
+        core::Session s("r", core::SessionType::Rlogin);
+        s.setHost(QStringLiteral("127.0.0.1"));
+        s.setPort(server.serverPort());
+        s.setUsername(QStringLiteral("alice"));
+
+        connect::SimpleTcpConnection conn(core::SessionType::Rlogin);
+        QByteArray clientGot;
+        QObject::connect(&conn, &connect::IConnection::dataReceived, &conn,
+                         [&](const QByteArray& d) { clientGot += d; });
+        QVERIFY(conn.connectSession(s));
+
+        // Wait for the client's socket to actually connect (handshake sent), then
+        // for the server's reply — proving connect → send → read all fire. Fall
+        // through after the timeout regardless so send()/disconnect still run.
+        QTRY_VERIFY_WITH_TIMEOUT(!clientGot.isEmpty(), 5000);
+        QVERIFY(clientGot.contains("server-hello"));
+
+        conn.send("more-input");                 // exercise send() post-connect
+        conn.disconnectSession();
+    }
 };
 
-QTEST_APPLESS_MAIN(TestSimpleTcp)
+QTEST_GUILESS_MAIN(TestSimpleTcp)   // needs a QCoreApplication for the live socket test
 #include "test_simpletcp.moc"

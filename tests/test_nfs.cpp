@@ -179,6 +179,111 @@ private slots:
         QVERIFY(s.handleDatagram(rpcCall(1, 999999, 1, 1)).isEmpty());
         s.stop();
     }
+
+    // Drive the remaining NFS/MOUNT/portmap procedures so their reply builders
+    // run (info/stat/access/lookup/readlink/rename/commit and the NULL procs).
+    void exercisesRemainingProcedures() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        { QFile f(dir.filePath("a.txt")); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("aaa"); }
+        { QFile f(dir.filePath("b.txt")); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("bbb"); }
+        NfsServer s;
+        QVERIFY(s.start(dir.path(), 2049));
+
+        // Root fh via MNT.
+        XdrWriter mnt; mnt.str(dir.path());
+        XdrReader mr(s.handleDatagram(rpcCall(1, 100005, 3, 1, mnt.data())));
+        bool ok = false;
+        for (int i = 0; i < 6; ++i) mr.u32(&ok);
+        mr.u32(&ok);
+        const QByteArray rootFh = mr.opaqueVar(&ok);
+        QVERIFY(ok);
+
+        auto call = [&](quint32 proc, const QByteArray& args) {
+            const QByteArray r = s.handleDatagram(rpcCall(7, 100003, 3, proc, args));
+            QVERIFY(!r.isEmpty());          // a reply was produced
+        };
+        auto fhArg = [&] { XdrWriter w; w.opaqueVar(rootFh); return w.data(); };
+
+        // NULL procs.
+        QVERIFY(!s.handleDatagram(rpcCall(1, 100000, 2, 0)).isEmpty());   // portmap NULL
+        QVERIFY(!s.handleDatagram(rpcCall(1, 100005, 3, 0)).isEmpty());   // mount NULL
+        QVERIFY(!s.handleDatagram(rpcCall(1, 100003, 3, 0)).isEmpty());   // nfs NULL
+
+        call(1, fhArg());                    // GETATTR(root)
+        call(19, fhArg());                   // FSINFO
+        call(18, fhArg());                   // FSSTAT
+        call(20, fhArg());                   // PATHCONF
+        { XdrWriter w; w.opaqueVar(rootFh); w.u32(0x3F); call(4, w.data()); }   // ACCESS
+
+        // LOOKUP a.txt → its fh, then GETATTR + READ it.
+        XdrWriter lk; lk.opaqueVar(rootFh); lk.str(QStringLiteral("a.txt"));
+        XdrReader lr(s.handleDatagram(rpcCall(7, 100003, 3, 3, lk.data())));
+        for (int i = 0; i < 6; ++i) lr.u32(&ok);
+        QCOMPARE(lr.u32(&ok), 0u);           // NFS3_OK
+        const QByteArray aFh = lr.opaqueVar(&ok);
+        QVERIFY(ok);
+        { XdrWriter w; w.opaqueVar(aFh); w.u64(0); w.u32(3); call(6, w.data()); }   // READ
+        { XdrWriter w; w.opaqueVar(aFh); call(5, w.data()); }                       // READLINK
+
+        // RENAME a.txt → c.txt, COMMIT root.
+        { XdrWriter w; w.opaqueVar(rootFh); w.str(QStringLiteral("a.txt"));
+          w.opaqueVar(rootFh); w.str(QStringLiteral("c.txt")); call(14, w.data()); }
+        { XdrWriter w; w.opaqueVar(rootFh); w.u64(0); w.u32(0); call(21, w.data()); } // COMMIT
+
+        // LOOKUP of a missing name → NOENT (covers the failure branch).
+        XdrWriter miss; miss.opaqueVar(rootFh); miss.str(QStringLiteral("nope"));
+        QVERIFY(!s.handleDatagram(rpcCall(7, 100003, 3, 3, miss.data())).isEmpty());
+        s.stop();
+    }
+
+    // Path-traversal + failure branches: a LOOKUP that escapes the export, a
+    // WRITE to a bad handle, and REMOVE/RMDIR of missing entries.
+    void rejectsEscapesAndBadOps() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        NfsServer s;
+        QVERIFY(s.start(dir.path(), 2049));
+
+        XdrWriter mnt; mnt.str(dir.path());
+        XdrReader mr(s.handleDatagram(rpcCall(1, 100005, 3, 1, mnt.data())));
+        bool ok = false;
+        for (int i = 0; i < 6; ++i) mr.u32(&ok);
+        mr.u32(&ok);
+        const QByteArray rootFh = mr.opaqueVar(&ok);
+        QVERIFY(ok);
+
+        // LOOKUP "../../etc" must not resolve outside the export → NOENT.
+        XdrWriter esc; esc.opaqueVar(rootFh); esc.str(QStringLiteral("../../etc"));
+        XdrReader er(s.handleDatagram(rpcCall(7, 100003, 3, 3, esc.data())));
+        for (int i = 0; i < 6; ++i) er.u32(&ok);
+        QCOMPARE(er.u32(&ok), 2u);   // NFS3ERR_NOENT
+
+        // REMOVE / RMDIR of a nonexistent name → error status, but a reply.
+        { XdrWriter w; w.opaqueVar(rootFh); w.str(QStringLiteral("ghost"));
+          QVERIFY(!s.handleDatagram(rpcCall(7, 100003, 3, 12, w.data())).isEmpty()); }
+        { XdrWriter w; w.opaqueVar(rootFh); w.str(QStringLiteral("ghostdir"));
+          QVERIFY(!s.handleDatagram(rpcCall(7, 100003, 3, 13, w.data())).isEmpty()); }
+
+        // GETATTR on an unknown file handle → NOENT.
+        { XdrWriter w; w.opaqueVar(QByteArray(32, '\xEE'));
+          XdrReader gr(s.handleDatagram(rpcCall(7, 100003, 3, 1, w.data())));
+          for (int i = 0; i < 6; ++i) gr.u32(&ok);
+          QCOMPARE(gr.u32(&ok), 2u); }   // NOENT
+        s.stop();
+    }
+
+    void malformedDatagramsIgnored() {
+        NfsServer s;
+        QTemporaryDir dir;
+        QVERIFY(s.start(dir.path(), 2049));
+        QVERIFY(s.handleDatagram(QByteArray()).isEmpty());       // empty
+        QVERIFY(s.handleDatagram(QByteArray("\x00\x00\x00", 3)).isEmpty());  // truncated
+        // A REPLY (msg_type 1) instead of a CALL (0) is not serviced.
+        XdrWriter w; w.u32(9); w.u32(1); w.u32(2); w.u32(100003); w.u32(3); w.u32(1);
+        QVERIFY(s.handleDatagram(w.data()).isEmpty());
+        s.stop();
+    }
 };
 
 QTEST_MAIN(TestNfs)

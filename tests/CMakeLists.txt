@@ -61,10 +61,21 @@ set(MACXTERM_TESTS
   test_truecolor
   test_packetdecode
   test_netprobe
+  test_cronserver
+  test_telnetserver
+  test_sshserver_sftp
+  test_packetcapture
+  test_localshell
 )
+
+# Separate-process SSH server harness for test_sshserver_sftp (libssh server;
+# the test is a libssh2 client, kept out of process to avoid a dual-crypto crash).
+add_executable(sshserver_fixture fixtures/sshserver_fixture.cpp)
+target_link_libraries(sshserver_fixture PRIVATE macxterm_core Qt6::Core)
 
 foreach(t ${MACXTERM_TESTS})
   add_executable(${t} ${t}.cpp)
   target_link_libraries(${t} PRIVATE macxterm_core Qt6::Test)
+  add_dependencies(${t} sshserver_fixture)
   add_test(NAME ${t} COMMAND ${t})
 endforeach()

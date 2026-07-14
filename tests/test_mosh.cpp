@@ -14,6 +14,19 @@ private slots:
         QCOMPARE(args.last(), QStringLiteral("user@host.example"));
     }
 
+    // connectSession spawns the `mosh` wrapper. Whether or not mosh is installed
+    // it drives the connect/send/disconnect paths (success → Connected; absent →
+    // the "failed to launch" error branch).
+    void connectSendDisconnect() {
+        connect::MoshConnection conn;
+        core::Session s("m", core::SessionType::Mosh);
+        s.setHost(QStringLiteral("127.0.0.1"));
+        s.setUsername(QStringLiteral("user"));
+        conn.connectSession(s);          // true or false depending on host tooling
+        conn.send("data");               // exercise send() (proc may not be running)
+        conn.disconnectSession();        // exercise terminate/cleanup
+    }
+
     void customPortAndKey() {
         core::Session s("m", core::SessionType::Mosh);
         s.setHost("h");
@@ -27,5 +40,5 @@ private slots:
     }
 };
 
-QTEST_APPLESS_MAIN(TestMosh)
+QTEST_GUILESS_MAIN(TestMosh)
 #include "test_mosh.moc"

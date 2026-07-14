@@ -54,6 +54,40 @@ private slots:
         QCOMPARE(v2.secret("id"), QStringLiteral("pw-value"));
         QFile::remove(path);
     }
+
+    void secretAccessors() {
+        CredentialVault v;
+        v.setSecret("a", "1");
+        v.setSecret("b", "2");
+        QVERIFY(v.hasSecret("a"));
+        QVERIFY(!v.hasSecret("missing"));
+        QCOMPARE(v.count(), 2);
+        v.removeSecret("a");
+        QVERIFY(!v.hasSecret("a"));
+        QCOMPARE(v.count(), 1);
+        v.clear();
+        QCOMPARE(v.count(), 0);
+    }
+
+    void loadMissingFileFails() {
+        CredentialVault v;
+        QVERIFY(!v.load(QDir::tempPath() + "/macxterm_no_such_vault.bin", "pw"));
+    }
+
+    void decryptRejectsGarbage() {
+        CredentialVault v;
+        QVERIFY(!v.decrypt(QByteArray(), "pw"));                 // empty
+        QVERIFY(!v.decrypt(QByteArray("not-a-vault-blob"), "pw")); // bad magic / too short
+    }
+
+    void emptyVaultRoundTrips() {
+        CredentialVault v;                     // no secrets
+        const QByteArray blob = v.encrypt("pw");
+        QVERIFY(!blob.isEmpty());
+        CredentialVault v2;
+        QVERIFY(v2.decrypt(blob, "pw"));
+        QCOMPARE(v2.count(), 0);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestVault)

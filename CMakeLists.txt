@@ -15,6 +15,13 @@ endif()
 
 option(MACXTERM_BUILD_GUI "Build the Qt GUI executable" ON)
 option(MACXTERM_BUILD_TESTS "Build unit tests" ON)
+option(MACXTERM_COVERAGE "Instrument for LLVM source-based code coverage" OFF)
+
+if(MACXTERM_COVERAGE)
+  add_compile_options(-fprofile-instr-generate -fcoverage-mapping -O0 -g)
+  add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+  add_compile_definitions(MACXTERM_COVERAGE)
+endif()
 
 # Help CMake find Homebrew Qt / libs on macOS Apple Silicon.
 if(APPLE)

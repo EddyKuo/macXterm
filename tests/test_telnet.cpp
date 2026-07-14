@@ -56,6 +56,32 @@ private slots:
         auto r2 = p.process(c2);
         QCOMPARE(static_cast<unsigned char>(r2.response[1]), WILL);   // negotiation completed across chunks
     }
+
+    // Server-initiated WILL/WONT and DONT drive the remaining negotiate() states.
+    void handlesWillWontDont() {
+        TelnetProtocol p;
+        QByteArray in;
+        in.append(static_cast<char>(IAC)); in.append(static_cast<char>(WILL)); in.append(static_cast<char>(OPT_SGA));
+        in.append(static_cast<char>(IAC)); in.append(static_cast<char>(WONT)); in.append(static_cast<char>(OPT_ECHO));
+        in.append(static_cast<char>(IAC)); in.append(static_cast<char>(DONT)); in.append(static_cast<char>(OPT_SGA));
+        in.append("tail");
+        auto r = p.process(in);
+        QCOMPARE(r.appData, QByteArray("tail"));   // negotiation bytes never reach app data
+        QVERIFY(!r.response.isEmpty());             // the client answered the WILL/WONT/DONT
+    }
+
+    // A subnegotiation block (IAC SB ... IAC SE) is consumed without app data.
+    void consumesSubnegotiation() {
+        TelnetProtocol p;
+        QByteArray in;
+        in.append("A");
+        in.append(static_cast<char>(IAC)); in.append(static_cast<char>(SB));
+        in.append(static_cast<char>(OPT_TTYPE)); in.append("xterm");
+        in.append(static_cast<char>(IAC)); in.append(static_cast<char>(SE));
+        in.append("B");
+        auto r = p.process(in);
+        QCOMPARE(r.appData, QByteArray("AB"));      // SB payload stripped
+    }
 };
 
 QTEST_APPLESS_MAIN(TestTelnet)
