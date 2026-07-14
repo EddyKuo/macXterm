@@ -35,6 +35,7 @@ public:
     TerminalWidget* openSession(const core::Session& session);
     // Split the current tab, adding another pane (same session or local shell).
     void splitCurrent(Qt::Orientation orientation);
+    void splitQuad();   // replace current tab with a 2×2 grid of the session
 
 public slots:
     void toggleMultiExec(bool on);
@@ -93,6 +94,7 @@ private:
     QHash<QString, QAction*> m_shortcutActions;
     bool m_multiExec = false;
     bool m_syntaxHighlight = false;
+    int m_pasteDelay = 0;
 };
 
 } // namespace macxterm::ui

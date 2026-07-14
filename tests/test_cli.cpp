@@ -31,6 +31,20 @@ private slots:
         QVERIFY(o.newTab);
         QVERIFY(o.exec.isEmpty());
     }
+
+    void parsesNewFlags() {
+        auto o = CliOptions::parse(
+            {"-exitwhendone", "-dpi", "144", "-log", "/tmp/s.log", "-shortcuts", "/sc.ini"});
+        QVERIFY(o.exitWhenDone);
+        QCOMPARE(o.dpi, 144);
+        QCOMPARE(o.logPath, QStringLiteral("/tmp/s.log"));
+        QCOMPARE(o.shortcutsPath, QStringLiteral("/sc.ini"));
+    }
+
+    void configIsAliasOfI() {
+        QCOMPARE(CliOptions::parse({"-config", "/a.ini"}).configPath, QStringLiteral("/a.ini"));
+        QCOMPARE(CliOptions::parse({"-dpi=200"}).dpi, 200);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestCli)

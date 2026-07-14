@@ -23,6 +23,10 @@
 #include "ui/FolderDiffDialog.h"
 #include "ui/ColorSchemeDialog.h"
 #include "ui/PacketCaptureDialog.h"
+#include "tools/NetProbe.h"
+#include <QSpinBox>
+#include <QHBoxLayout>
+#include <QPushButton>
 #if defined(MACXTERM_HAVE_WEBENGINE)
 #include "ui/BrowserTab.h"
 #endif
@@ -191,6 +195,7 @@ void MainWindow::buildMenus() {
     QMenu* view = menuBar()->addMenu(QStringLiteral("&View"));
     view->addAction(QStringLiteral("Split Right"), this, [this] { splitCurrent(Qt::Horizontal); });
     view->addAction(QStringLiteral("Split Down"), this, [this] { splitCurrent(Qt::Vertical); });
+    view->addAction(QStringLiteral("Split 2×2 Grid"), this, [this] { splitQuad(); });
     view->addSeparator();
     view->addAction(QStringLiteral("Full Screen"), this, [this] {
         setWindowState(windowState() ^ Qt::WindowFullScreen);
@@ -199,6 +204,14 @@ void MainWindow::buildMenus() {
     for (int pct : {100, 95, 90, 85, 80}) {
         trans->addAction(QStringLiteral("%1%").arg(pct), this,
                          [this, pct] { setWindowOpacity(pct / 100.0); });
+    }
+    QMenu* pasteMenu = view->addMenu(QStringLiteral("Paste Delay"));
+    for (int ms : {0, 10, 50, 100, 250}) {
+        pasteMenu->addAction(ms == 0 ? QStringLiteral("Off") : QStringLiteral("%1 ms/line").arg(ms),
+                             this, [this, ms] {
+            m_pasteDelay = ms;
+            for (TerminalWidget* p : m_tabs->findChildren<TerminalWidget*>()) p->setPasteDelay(ms);
+        });
     }
     view->addSeparator();
     auto* hlAction = view->addAction(QStringLiteral("Syntax Highlighting"));
@@ -226,6 +239,35 @@ void MainWindow::buildMenus() {
     tools->addAction(QStringLiteral("Packet Capture…"), this, [this] {
         auto* dlg = new PacketCaptureDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Network Tools (ping / httping)…"), this, [this] {
+        auto* dlg = new QDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setWindowTitle(QStringLiteral("Network Tools"));
+        auto* lay = new QFormLayout(dlg);
+        auto* host = new QLineEdit(QStringLiteral("localhost"), dlg);
+        auto* portSpin = new QSpinBox(dlg); portSpin->setRange(1, 65535); portSpin->setValue(80);
+        auto* result = new QLabel(dlg);
+        result->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        auto* tcpBtn = new QPushButton(QStringLiteral("TCP ping"), dlg);
+        auto* httpBtn = new QPushButton(QStringLiteral("httping"), dlg);
+        connect(tcpBtn, &QPushButton::clicked, dlg, [=] {
+            const auto r = tools::NetProbe::tcpPing(host->text(),
+                static_cast<quint16>(portSpin->value()));
+            result->setText(r.ok ? QStringLiteral("TCP %1 ms — %2").arg(r.ms).arg(r.detail)
+                                 : QStringLiteral("failed: %1").arg(r.detail));
+        });
+        connect(httpBtn, &QPushButton::clicked, dlg, [=] {
+            const auto r = tools::NetProbe::httping(host->text());
+            result->setText(r.ok ? QStringLiteral("HTTP %1 ms — %2").arg(r.ms).arg(r.detail)
+                                 : QStringLiteral("failed: %1").arg(r.detail));
+        });
+        lay->addRow(QStringLiteral("Host"), host);
+        lay->addRow(QStringLiteral("Port"), portSpin);
+        auto* btns = new QHBoxLayout; btns->addWidget(tcpBtn); btns->addWidget(httpBtn);
+        lay->addRow(btns);
+        lay->addRow(result);
         dlg->show();
     });
     tools->addSeparator();
@@ -843,6 +885,33 @@ void MainWindow::broadcastInput(const QByteArray& bytes) {
         if (p->multiExecEnabled()) p->feedInput(bytes);
 }
 
+void MainWindow::splitQuad() {
+    QWidget* cur = m_tabs->currentWidget();
+    if (!cur) return;
+    const int idx = m_tabs->currentIndex();
+    const QString title = m_tabs->tabText(idx);
+
+    TerminalWidget* refPane = currentPane();
+    const core::Session s = refPane
+        ? m_tabSessions.value(refPane, core::Session(QStringLiteral("local"), core::SessionType::Shell))
+        : core::Session(QStringLiteral("local"), core::SessionType::Shell);
+
+    // Build a 2×2 grid: an outer vertical splitter of two horizontal rows. The
+    // existing pane becomes the top-left; three new panes fill the rest.
+    m_tabs->removeTab(idx);
+    auto* outer = new QSplitter(Qt::Vertical, m_tabs);
+    auto* top = new QSplitter(Qt::Horizontal, outer);
+    auto* bottom = new QSplitter(Qt::Horizontal, outer);
+    top->addWidget(cur);
+    top->addWidget(makePane(s));
+    bottom->addWidget(makePane(s));
+    bottom->addWidget(makePane(s));
+    outer->addWidget(top);
+    outer->addWidget(bottom);
+    m_tabs->insertTab(idx, outer, title);
+    m_tabs->setCurrentIndex(idx);
+}
+
 void MainWindow::splitCurrent(Qt::Orientation orientation) {
     QWidget* cur = m_tabs->currentWidget();
     if (!cur) return;
@@ -914,6 +983,7 @@ void MainWindow::applySettings(TerminalWidget* term) {
     f.setPointSize(m_settings.fontSize());
     term->setTerminalFont(f);
     term->setSyntaxHighlighting(m_syntaxHighlight);
+    term->setPasteDelay(m_pasteDelay);
 }
 
 } // namespace macxterm::ui

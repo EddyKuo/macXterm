@@ -11,11 +11,15 @@ struct CliOptions {
     QString exec;         // -exec "cmd"     : run a command in a new terminal
     QString bookmark;     // -bookmark name  : launch a saved session
     QString runMacro;     // -runmacro name
-    QString configPath;   // -i path         : alternate config file
+    QString configPath;   // -i path / -config path : alternate config file
     QString openFolder;   // -openfolder path
+    QString logPath;      // -log path       : session log file
+    QString shortcutsPath;// -shortcuts path : alternate shortcuts file
+    int dpi = 0;          // -dpi N          : override DPI (0 = auto)
     bool newTab = false;  // -newtab
     bool noX = false;     // -noX            : disable the X server
     bool hideTerm = false;// -hideterm
+    bool exitWhenDone = false;  // -exitwhendone : quit after -exec finishes
 
     // Parse an argv-style list (excluding program name). Unknown flags are
     // ignored (forward-compatible). Values may follow the flag or use '='.

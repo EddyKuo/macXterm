@@ -11,7 +11,10 @@ CliOptions CliOptions::parse(const QStringList& args) {
         {"-bookmark",   &CliOptions::bookmark},
         {"-runmacro",   &CliOptions::runMacro},
         {"-i",          &CliOptions::configPath},
+        {"-config",     &CliOptions::configPath},   // alias of -i
         {"-openfolder", &CliOptions::openFolder},
+        {"-log",        &CliOptions::logPath},
+        {"-shortcuts",  &CliOptions::shortcutsPath},
     };
 
     for (int i = 0; i < args.size(); ++i) {
@@ -20,9 +23,16 @@ CliOptions CliOptions::parse(const QStringList& args) {
         const int eq = a.indexOf('=');
         if (a.startsWith('-') && eq > 0) { inlineVal = a.mid(eq + 1); a = a.left(eq); }
 
-        if (a == "-newtab")   { o.newTab = true; continue; }
-        if (a == "-noX")      { o.noX = true; continue; }
-        if (a == "-hideterm") { o.hideTerm = true; continue; }
+        if (a == "-newtab")      { o.newTab = true; continue; }
+        if (a == "-noX")         { o.noX = true; continue; }
+        if (a == "-hideterm")    { o.hideTerm = true; continue; }
+        if (a == "-exitwhendone"){ o.exitWhenDone = true; continue; }
+        if (a == "-dpi") {
+            const QString v = !inlineVal.isEmpty() ? inlineVal
+                              : (i + 1 < args.size() ? args[++i] : QString());
+            o.dpi = v.toInt();
+            continue;
+        }
 
         auto it = valueFlags.find(a);
         if (it != valueFlags.end()) {

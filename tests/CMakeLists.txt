@@ -60,6 +60,7 @@ set(MACXTERM_TESTS
   test_x11server
   test_truecolor
   test_packetdecode
+  test_netprobe
 )
 
 foreach(t ${MACXTERM_TESTS})

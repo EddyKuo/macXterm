@@ -9,6 +9,7 @@
 #include <QClipboard>
 #include <QFile>
 #include <QMessageBox>
+#include <QTimer>
 #include <algorithm>
 
 namespace macxterm::ui {
@@ -348,6 +349,19 @@ void TerminalWidget::paste() {
         if (btn != QMessageBox::Yes) return;
     }
     if (m_scrollOffset != 0) { m_scrollOffset = 0; update(); }
+
+    // Optional paste delay: dribble multi-line pastes one line at a time.
+    if (m_pasteDelayMs > 0 && text.contains('\n')) {
+        const QStringList parts = text.split('\n');
+        int delay = 0;
+        for (int i = 0; i < parts.size(); ++i) {
+            QByteArray chunk = parts[i].toUtf8();
+            if (i < parts.size() - 1) chunk.append('\n');
+            QTimer::singleShot(delay, this, [this, chunk] { sendInput(chunk); });
+            delay += m_pasteDelayMs;
+        }
+        return;
+    }
     sendInput(text.toUtf8());
 }
 

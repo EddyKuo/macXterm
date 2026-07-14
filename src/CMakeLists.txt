@@ -54,6 +54,7 @@ add_library(macxterm_core STATIC
   tools/Xdr.cpp
   tools/NfsServer.cpp
   tools/PacketCapture.cpp
+  tools/NetProbe.cpp
   sftp/RemotePath.cpp
   sftp/SftpEntry.cpp
   sftp/SftpConnection.cpp

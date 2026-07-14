@@ -60,6 +60,11 @@ public:
     void copySelection();
     void paste();
 
+    // Paste delay: when > 0, a multi-line paste is delivered line-by-line with
+    // this many milliseconds between lines (avoids overrunning slow remotes).
+    void setPasteDelay(int ms) { m_pasteDelayMs = ms; }
+    int pasteDelay() const { return m_pasteDelayMs; }
+
     QSize sizeHint() const override { return {640, 400}; }
 
 signals:
@@ -88,6 +93,7 @@ private:
     term::ColorScheme m_scheme;
     term::SyntaxHighlighter m_highlighter;
     QFile* m_logFile = nullptr;
+    int m_pasteDelayMs = 0;
     connect::IConnection* m_conn = nullptr;
     int m_cellW = 8;
     int m_cellH = 16;
