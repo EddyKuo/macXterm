@@ -12,6 +12,7 @@
 #include "ui/SettingsDialog.h"
 #include "ui/TunnelDialog.h"
 #include "ui/VaultDialog.h"
+#include "ui/SftpPanel.h"
 #include "core/Settings.h"
 #include <QTabWidget>
 #include <QTabBar>
@@ -201,7 +202,21 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
     m_tabs->setCurrentIndex(idx);
     conn->connectSession(session);
     term->setFocus();
+
+    // Show the SFTP browser for connections that support it (SSH/SFTP).
+    if (conn->capabilities().sftp) showSftpFor(session);
     return term;
+}
+
+void MainWindow::showSftpFor(const core::Session& session) {
+    if (!m_sftpDock) {
+        m_sftpPanel = new SftpPanel(this);
+        m_sftpDock = new QDockWidget(QStringLiteral("SFTP"), this);
+        m_sftpDock->setWidget(m_sftpPanel);
+        addDockWidget(Qt::RightDockWidgetArea, m_sftpDock);
+    }
+    m_sftpDock->show();
+    m_sftpPanel->openFor(session);   // dedicated SFTP session (blocking; LAN-fast)
 }
 
 void MainWindow::toggleMultiExec(bool on) {

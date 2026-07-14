@@ -36,6 +36,7 @@ set(MACXTERM_TESTS
   test_x11
   test_rdp
   test_ssh_live
+  test_sftp_live
   test_vnc
   test_serial_pty
   test_telnet_live

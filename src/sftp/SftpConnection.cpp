@@ -3,10 +3,88 @@
 #include <libssh2_sftp.h>
 #include <QFile>
 
+#if !defined(_WIN32)
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#endif
+
 namespace macxterm::sftp {
 
-SftpConnection::SftpConnection(QObject* parent) : QObject(parent) {}
-SftpConnection::~SftpConnection() { detach(); }
+SftpConnection::SftpConnection(QObject* parent) : QObject(parent) { libssh2_init(0); }
+SftpConnection::~SftpConnection() { disconnectSession(); libssh2_exit(); }
+
+#if !defined(_WIN32)
+bool SftpConnection::connectSession(const core::Session& s) {
+    disconnectSession();
+    // Open a TCP socket to host:port.
+    struct addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    const QByteArray host = s.host().toUtf8();
+    const QByteArray port = QByteArray::number(s.port());
+    if (getaddrinfo(host.constData(), port.constData(), &hints, &res) != 0) {
+        emit error(QStringLiteral("SFTP: host lookup failed")); return false;
+    }
+    int fd = -1;
+    for (auto* p = res; p; p = p->ai_next) {
+        fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (fd < 0) continue;
+        if (::connect(fd, p->ai_addr, p->ai_addrlen) == 0) break;
+        ::close(fd); fd = -1;
+    }
+    freeaddrinfo(res);
+    if (fd < 0) { emit error(QStringLiteral("SFTP: connection refused")); return false; }
+
+    LIBSSH2_SESSION* sess = libssh2_session_init();
+    if (!sess) { ::close(fd); return false; }
+    libssh2_session_set_blocking(sess, 1);
+    if (libssh2_session_handshake(sess, fd) != 0) {
+        emit error(QStringLiteral("SFTP: SSH handshake failed"));
+        libssh2_session_free(sess); ::close(fd); return false;
+    }
+    const QByteArray user = s.username().toUtf8();
+    const QByteArray keyfile = s.param("keyfile").toUtf8();
+    bool authed;
+    if (!keyfile.isEmpty()) {
+        const QByteArray pass = s.param("passphrase").toUtf8();
+        authed = libssh2_userauth_publickey_fromfile(
+                     sess, user.constData(), nullptr, keyfile.constData(), pass.constData()) == 0;
+    } else {
+        const QByteArray pw = s.param("password").toUtf8();
+        authed = libssh2_userauth_password(sess, user.constData(), pw.constData()) == 0;
+    }
+    if (!authed) {
+        emit error(QStringLiteral("SFTP: authentication failed"));
+        libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); ::close(fd);
+        return false;
+    }
+    m_sftp = libssh2_sftp_init(sess);
+    if (!m_sftp) {
+        emit error(QStringLiteral("SFTP: failed to start subsystem"));
+        libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); ::close(fd);
+        return false;
+    }
+    m_session = sess; m_sock = fd; m_ownsSession = true;
+    return true;
+}
+#else
+bool SftpConnection::connectSession(const core::Session&) {
+    emit error(QStringLiteral("SFTP on Windows not yet wired")); return false;
+}
+#endif
+
+void SftpConnection::disconnectSession() {
+    if (m_sftp) { libssh2_sftp_shutdown(m_sftp); m_sftp = nullptr; }
+    if (m_ownsSession && m_session) {
+        libssh2_session_disconnect(m_session, "bye");
+        libssh2_session_free(m_session);
+#if !defined(_WIN32)
+        if (m_sock >= 0) ::close(m_sock);
+#endif
+    }
+    m_session = nullptr; m_sock = -1; m_ownsSession = false;
+}
 
 bool SftpConnection::attach(LIBSSH2_SESSION* session, int socketFd) {
     m_session = session;

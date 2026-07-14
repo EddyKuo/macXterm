@@ -7,10 +7,12 @@
 class QTabWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QDockWidget;
 
 namespace macxterm::ui {
 
 class TerminalWidget;
+class SftpPanel;
 
 // Main application window: session tree sidebar + tabbed terminal area + toolbar
 // (Architecture §3, UI_Spec). Phase 1 wires local shell + SSH tabs and MultiExec.
@@ -39,8 +41,12 @@ private:
     void saveSettings();
     void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
+    void showSftpFor(const core::Session& session);
+
     QTabWidget* m_tabs = nullptr;
     QTreeWidget* m_tree = nullptr;
+    QDockWidget* m_sftpDock = nullptr;
+    SftpPanel* m_sftpPanel = nullptr;
     core::SessionFolder m_sessions{QStringLiteral("Sessions")};
     core::Store m_store;
     core::Settings m_settings;

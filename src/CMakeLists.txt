@@ -81,6 +81,7 @@ if(MACXTERM_BUILD_GUI)
     ui/TunnelDialog.cpp
     ui/SettingsDialog.cpp
     ui/RdpSurfaceWidget.cpp
+    ui/SftpPanel.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   set_target_properties(macxterm PROPERTIES

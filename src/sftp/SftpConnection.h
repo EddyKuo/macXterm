@@ -1,5 +1,6 @@
 #pragma once
 #include "sftp/SftpEntry.h"
+#include "core/Session.h"
 #include <QObject>
 #include <QString>
 #include <QList>
@@ -24,6 +25,12 @@ public:
     void detach();
     bool isReady() const { return m_sftp != nullptr; }
 
+    // Self-contained connect: open a dedicated SSH session from the Session's
+    // params (host/port/username/password or keyfile), authenticate, and start
+    // the SFTP subsystem. Blocking; run off the UI thread for slow endpoints.
+    bool connectSession(const core::Session& session);
+    void disconnectSession();
+
     // List a remote directory into sorted SftpEntry rows. Returns false on error.
     bool list(const QString& path, QList<SftpEntry>& out);
 
@@ -38,6 +45,7 @@ private:
     LIBSSH2_SESSION* m_session = nullptr;
     LIBSSH2_SFTP* m_sftp = nullptr;
     int m_sock = -1;
+    bool m_ownsSession = false;   // true when we opened the session ourselves
 };
 
 } // namespace macxterm::sftp
