@@ -59,6 +59,7 @@ set(MACXTERM_TESTS
   test_nfs
   test_x11server
   test_truecolor
+  test_packetdecode
 )
 
 foreach(t ${MACXTERM_TESTS})

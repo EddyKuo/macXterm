@@ -22,6 +22,7 @@
 #include "ui/ImageViewerDialog.h"
 #include "ui/FolderDiffDialog.h"
 #include "ui/ColorSchemeDialog.h"
+#include "ui/PacketCaptureDialog.h"
 #if defined(MACXTERM_HAVE_WEBENGINE)
 #include "ui/BrowserTab.h"
 #endif
@@ -219,6 +220,11 @@ void MainWindow::buildMenus() {
     });
     tools->addAction(QStringLiteral("SSH Key Generator…"), this, [this] {
         auto* dlg = new KeyGenDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    tools->addAction(QStringLiteral("Packet Capture…"), this, [this] {
+        auto* dlg = new PacketCaptureDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });

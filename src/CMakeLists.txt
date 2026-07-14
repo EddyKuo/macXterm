@@ -53,6 +53,7 @@ add_library(macxterm_core STATIC
   tools/SshServer.cpp
   tools/Xdr.cpp
   tools/NfsServer.cpp
+  tools/PacketCapture.cpp
   sftp/RemotePath.cpp
   sftp/SftpEntry.cpp
   sftp/SftpConnection.cpp
@@ -94,6 +95,13 @@ if(MACXTERM_LIBSSH)
   target_link_libraries(macxterm_core PUBLIC ${SSH_LIB})
 endif()
 
+# libpcap — packet capture (tools/PacketCapture.cpp).
+if(MACXTERM_PCAP)
+  target_compile_definitions(macxterm_core PUBLIC MACXTERM_HAVE_PCAP)
+  target_include_directories(macxterm_core PUBLIC ${PCAP_INCLUDE})
+  target_link_libraries(macxterm_core PUBLIC ${PCAP_LIB})
+endif()
+
 if(MACXTERM_BUILD_GUI)
   add_executable(macxterm
     ui/main.cpp
@@ -113,6 +121,7 @@ if(MACXTERM_BUILD_GUI)
     ui/ImageViewerDialog.cpp
     ui/FolderDiffDialog.cpp
     ui/ColorSchemeDialog.cpp
+    ui/PacketCaptureDialog.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   if(MACXTERM_WEBENGINE)

@@ -48,6 +48,17 @@ else()
   message(STATUS "libssh not found — SSH/SFTP server disabled")
 endif()
 
+# libpcap (BSD, optional) — packet capture / network sniffer.
+find_library(PCAP_LIB pcap)
+find_path(PCAP_INCLUDE pcap.h)
+if(PCAP_LIB AND PCAP_INCLUDE)
+  set(MACXTERM_PCAP ON)
+  message(STATUS "libpcap found — packet capture enabled")
+else()
+  set(MACXTERM_PCAP OFF)
+  message(STATUS "libpcap not found — packet capture disabled")
+endif()
+
 # ── Third-party C libs (all permissive / MIT-compatible per ADR_6) ──
 find_package(PkgConfig QUIET)
 
