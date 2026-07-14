@@ -1,6 +1,12 @@
 #include "connect/LocalShellConnection.h"
 #include <QProcessEnvironment>
+#include <QFileInfo>
 #include <cstdlib>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#include <pwd.h>
+#endif
 
 namespace macxterm::connect {
 
@@ -16,9 +22,26 @@ bool LocalShellConnection::connectSession(const core::Session& session) {
     QString shell = session.param("shell");
     if (shell.isEmpty()) {
         const char* env = std::getenv("SHELL");
-        shell = env ? QString::fromLocal8Bit(env) : QStringLiteral("/bin/sh");
+        shell = env ? QString::fromLocal8Bit(env) : QString();
     }
-    if (!m_pty.start(shell, {}, m_cols, m_rows)) {
+#if !defined(_WIN32)
+    // $SHELL can be missing/inconsistent when the app is launched from Finder or
+    // via `open` (launchd session), so fall back to the account's login shell.
+    if (shell.isEmpty()) {
+        if (const passwd* pw = ::getpwuid(::getuid()); pw && pw->pw_shell && *pw->pw_shell)
+            shell = QString::fromLocal8Bit(pw->pw_shell);
+    }
+#endif
+    if (shell.isEmpty()) shell = QStringLiteral("/bin/sh");
+
+    // Start it as a LOGIN shell (argv[0] = "-<name>") so it sources the user's
+    // full profile (~/.zprofile, /etc/profile, …). This gives the same PATH and
+    // environment no matter how macXterm itself was launched — otherwise a
+    // Finder double-click and a CLI `open` yield different shell environments.
+    const bool wantLogin = session.param("loginshell", "1") != "0";
+    const QString argv0 = wantLogin ? QStringLiteral("-") + QFileInfo(shell).fileName() : QString();
+
+    if (!m_pty.start(shell, {}, m_cols, m_rows, argv0)) {
         setState(State::Failed);
         emit errorOccurred(QStringLiteral("Failed to start shell: %1").arg(shell));
         return false;

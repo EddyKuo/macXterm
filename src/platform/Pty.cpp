@@ -19,7 +19,8 @@ namespace macxterm::platform {
 Pty::Pty(QObject* parent) : QObject(parent) {}
 Pty::~Pty() { terminate(); }
 
-bool Pty::start(const QString& program, const QStringList& args, int cols, int rows) {
+bool Pty::start(const QString& program, const QStringList& args, int cols, int rows,
+                const QString& /*argv0*/) {
     if (isRunning()) return false;
 
     HANDLE inRead = nullptr, inWrite = nullptr, outRead = nullptr, outWrite = nullptr;
@@ -129,7 +130,8 @@ Pty::Pty(QObject* parent) : QObject(parent) {}
 
 Pty::~Pty() { terminate(); }
 
-bool Pty::start(const QString& program, const QStringList& args, int cols, int rows) {
+bool Pty::start(const QString& program, const QStringList& args, int cols, int rows,
+                const QString& argv0) {
     if (isRunning()) return false;
 
     struct winsize ws{};
@@ -141,10 +143,11 @@ bool Pty::start(const QString& program, const QStringList& args, int cols, int r
     if (pid < 0) return false;
 
     if (pid == 0) {
-        // Child: exec the shell/program.
+        // Child: exec the shell/program. argv[0] may differ from the exec target
+        // (e.g. "-zsh" to request a login shell that sources the full profile).
         const QByteArray prog = program.toLocal8Bit();
         std::vector<QByteArray> argvStore;
-        argvStore.push_back(prog);
+        argvStore.push_back(argv0.isEmpty() ? prog : argv0.toLocal8Bit());
         for (const QString& a : args) argvStore.push_back(a.toLocal8Bit());
         std::vector<char*> argv;
         for (auto& s : argvStore) argv.push_back(s.data());

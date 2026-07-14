@@ -17,8 +17,10 @@ public:
     ~Pty() override;
 
     // Launch `program` with `args` in a new PTY. Returns false on failure.
+    // `argv0`, when non-empty, overrides argv[0] (the exec target stays
+    // `program`) — pass "-zsh" etc. to start `program` as a login shell.
     bool start(const QString& program, const QStringList& args = {},
-               int cols = 80, int rows = 24);
+               int cols = 80, int rows = 24, const QString& argv0 = QString());
 
     bool isRunning() const { return m_pid > 0; }
     qint64 write(const QByteArray& data);
