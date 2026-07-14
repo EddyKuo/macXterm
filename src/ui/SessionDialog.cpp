@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QFileDialog>
 #include <QDir>
+#include <QFileInfo>
 #include <QDialogButtonBox>
 #include <QMessageBox>
 
@@ -87,10 +88,22 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
 }
 
 void SessionDialog::browseKeyFile() {
-    const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("Select private key"),
-        QDir::homePath() + QStringLiteral("/.ssh"));
-    if (!path.isEmpty()) m_keyfile->setText(path);
+    // Start in ~/.ssh when it exists, else the home directory.
+    QString start = QDir::homePath() + QStringLiteral("/.ssh");
+    if (!QFileInfo::exists(start)) start = QDir::homePath();
+
+    // Use Qt's own dialog (not the native macOS panel): SSH keys live in the
+    // hidden ~/.ssh directory, and the native Open panel hides dotfiles by
+    // default — which makes the button look like it "does nothing". The Qt
+    // dialog with the Hidden filter shows them reliably on every platform.
+    QFileDialog dlg(this, QStringLiteral("Select private key"), start);
+    dlg.setFileMode(QFileDialog::ExistingFile);
+    dlg.setOption(QFileDialog::DontUseNativeDialog, true);
+    dlg.setFilter(QDir::Files | QDir::Hidden | QDir::AllDirs | QDir::NoDotAndDotDot);
+    if (dlg.exec() == QDialog::Accepted) {
+        const QStringList sel = dlg.selectedFiles();
+        if (!sel.isEmpty()) m_keyfile->setText(sel.first());
+    }
 }
 
 void SessionDialog::setSession(const core::Session& s) {
