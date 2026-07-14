@@ -30,6 +30,11 @@ ServersDialog::ServersDialog(QWidget* parent) : QDialog(parent) {
         [this] { m_tftp.stop(); }, [this] { return m_tftp.isRunning(); },
         [this] { return m_tftp.port(); }));
 
+    layout->addWidget(buildRow(QStringLiteral("NFS (read-only)"), true,
+        [this](const QString& dir, quint16 port) { return m_nfs.start(dir, port ? port : 2049); },
+        [this] { m_nfs.stop(); }, [this] { return m_nfs.isRunning(); },
+        [this] { return m_nfs.port(); }));
+
     layout->addWidget(buildRow(QStringLiteral("TELNET (shell)"), false,
         [this](const QString&, quint16 port) { return m_telnet.start(port); },
         [this] { m_telnet.stop(); }, [this] { return m_telnet.isRunning(); },

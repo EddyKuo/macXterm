@@ -5,6 +5,7 @@
 #include "tools/TelnetServer.h"
 #include "tools/CronServer.h"
 #include "tools/SshServer.h"
+#include "tools/NfsServer.h"
 #include <QDialog>
 #include <QString>
 #include <functional>
@@ -39,6 +40,7 @@ private:
     tools::TelnetServer m_telnet;
     tools::CronServer m_cron;
     tools::SshServer m_ssh;
+    tools::NfsServer m_nfs;
 };
 
 } // namespace macxterm::ui
