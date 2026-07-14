@@ -33,6 +33,7 @@ add_library(macxterm_core STATIC
   tunnel/SshTunnel.cpp
   tools/PortScanner.cpp
   tools/RemoteMonitor.cpp
+  tools/SshExec.cpp
   tools/TftpPacket.cpp
   tools/TextDiff.cpp
   tools/HttpServer.cpp
@@ -87,6 +88,7 @@ if(MACXTERM_BUILD_GUI)
     ui/KeyGenDialog.cpp
     ui/TextEditorDialog.cpp
     ui/ServersDialog.cpp
+    ui/RemoteMonitorBar.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   set_target_properties(macxterm PROPERTIES

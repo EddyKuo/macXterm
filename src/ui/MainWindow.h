@@ -17,6 +17,7 @@ namespace macxterm::ui {
 
 class TerminalWidget;
 class SftpPanel;
+class RemoteMonitorBar;
 
 // Main application window: session tree sidebar + tabbed terminal area + toolbar
 // (Architecture §3, UI_Spec). Phase 1 wires local shell + SSH tabs and MultiExec.
@@ -65,6 +66,7 @@ private:
     QTreeWidget* m_tree = nullptr;
     QDockWidget* m_sftpDock = nullptr;
     SftpPanel* m_sftpPanel = nullptr;
+    RemoteMonitorBar* m_monitor = nullptr;
     core::SessionFolder m_sessions{QStringLiteral("Sessions")};
     core::Store m_store;
     core::Settings m_settings;

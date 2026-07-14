@@ -18,6 +18,7 @@
 #include "ui/KeyGenDialog.h"
 #include "ui/TextEditorDialog.h"
 #include "ui/ServersDialog.h"
+#include "ui/RemoteMonitorBar.h"
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
 #include <QTimer>
@@ -459,8 +460,15 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
         term->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
     conn->connectSession(resolveSecrets(session));
 
-    // Show the SFTP browser for connections that support it (SSH/SFTP).
-    if (conn->capabilities().sftp) showSftpFor(session);
+    // Show the SFTP browser + start the remote monitor for SSH sessions.
+    if (conn->capabilities().sftp) {
+        showSftpFor(session);
+        if (!m_monitor) {
+            m_monitor = new RemoteMonitorBar(this);
+            statusBar()->addPermanentWidget(m_monitor);
+        }
+        m_monitor->start(resolveSecrets(session));
+    }
     return term;
 }
 
