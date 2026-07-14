@@ -201,6 +201,14 @@ void SftpPanel::showContextMenu(const QPoint& pos) {
         if (!isDir) {
             menu.addAction(QStringLiteral("Edit…"), this, [this, target] { editRemote(target); });
             menu.addAction(QStringLiteral("Download…"), this, &SftpPanel::download);
+            menu.addAction(QStringLiteral("Download via SCP…"), this, [this, target, name] {
+                const QString local = QFileDialog::getSaveFileName(
+                    this, QStringLiteral("Download (SCP) to"), name);
+                if (local.isEmpty()) return;
+                const qint64 n = m_sftp.scpDownload(target, local);
+                setStatus(n >= 0 ? QStringLiteral("SCP downloaded %1 bytes").arg(n)
+                                 : QStringLiteral("SCP download failed"));
+            });
         }
         menu.addAction(QStringLiteral("Permissions (chmod)…"), this, [this, target] {
             QTreeWidgetItem* it = m_list->currentItem();

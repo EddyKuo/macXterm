@@ -166,6 +166,50 @@ qint64 SftpConnection::upload(const QString& localPath, const QString& remotePat
     return total;
 }
 
+qint64 SftpConnection::scpDownload(const QString& remotePath, const QString& localPath) {
+    if (!m_session) return -1;
+    libssh2_struct_stat st{};
+    LIBSSH2_CHANNEL* ch = libssh2_scp_recv2(m_session, remotePath.toUtf8().constData(), &st);
+    if (!ch) { emit error(QStringLiteral("SCP download failed")); return -1; }
+    QFile local(localPath);
+    if (!local.open(QIODevice::WriteOnly)) { libssh2_channel_free(ch); return -1; }
+    qint64 remaining = st.st_size, total = 0;
+    char buf[16384];
+    while (remaining > 0) {
+        const ssize_t want = static_cast<ssize_t>(qMin<qint64>(sizeof(buf), remaining));
+        const ssize_t n = libssh2_channel_read(ch, buf, want);
+        if (n <= 0) break;
+        local.write(buf, n);
+        total += n; remaining -= n;
+    }
+    libssh2_channel_send_eof(ch);
+    libssh2_channel_free(ch);
+    return total;
+}
+
+qint64 SftpConnection::scpUpload(const QString& localPath, const QString& remotePath) {
+    if (!m_session) return -1;
+    QFile local(localPath);
+    if (!local.open(QIODevice::ReadOnly)) return -1;
+    const QByteArray data = local.readAll();
+    LIBSSH2_CHANNEL* ch = libssh2_scp_send64(
+        m_session, remotePath.toUtf8().constData(), 0644,
+        static_cast<libssh2_uint64_t>(data.size()), 0, 0);
+    if (!ch) { emit error(QStringLiteral("SCP upload failed")); return -1; }
+    qint64 total = 0;
+    int off = 0;
+    while (off < data.size()) {
+        const ssize_t n = libssh2_channel_write(ch, data.constData() + off, data.size() - off);
+        if (n < 0) break;
+        off += n; total += n;
+    }
+    libssh2_channel_send_eof(ch);
+    libssh2_channel_wait_eof(ch);
+    libssh2_channel_wait_closed(ch);
+    libssh2_channel_free(ch);
+    return total;
+}
+
 QString SftpConnection::realpath(const QString& path) {
     if (!m_sftp) return {};
     char buf[1024];

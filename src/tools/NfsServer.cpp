@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace macxterm::tools {
 namespace {
@@ -51,6 +52,24 @@ void putPostOpAttr(XdrWriter& w, const QString& path) {
     } else {
         w.u32(0);
     }
+}
+
+// wcc_data = pre_op_attr (we send "none") + post_op_attr.
+void putWccData(XdrWriter& w, const QString& path) {
+    w.u32(0);                       // pre_op_attr: attributes_follow = false
+    putPostOpAttr(w, path);         // post_op_attr
+}
+
+// Consume an sattr3 (set-attributes) structure from a request. Each optional
+// field is a "value follows" bool; times carry a set-mode selector.
+void skipSattr3(XdrReader& r) {
+    bool ok = true;
+    if (r.u32(&ok)) r.u32(&ok);              // mode
+    if (r.u32(&ok)) r.u32(&ok);              // uid
+    if (r.u32(&ok)) r.u32(&ok);              // gid
+    if (r.u32(&ok)) r.u64(&ok);              // size
+    if (r.u32(&ok) == 2) { r.u32(&ok); r.u32(&ok); }   // atime (2 = SET_TO_CLIENT_TIME)
+    if (r.u32(&ok) == 2) { r.u32(&ok); r.u32(&ok); }   // mtime
 }
 
 // Build the fixed RPC "accepted success" reply prefix for a given xid.
@@ -273,7 +292,102 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             w.u32(0); w.u32(1); w.u32(1); w.u32(0);      // no_trunc/chown_restricted/case*
             return w.data();
         }
-        // Unsupported (write ops etc.).
+        if (proc == 2) {                                // SETATTR(fh, sattr3, guard)
+            const QString path = pathForHandle(readFh(&ok));
+            // Apply size (truncate) + mode if present; other fields tolerated.
+            bool has = false;
+            const bool setMode = r.u32(&ok); const quint32 mode = setMode ? r.u32(&ok) : 0;
+            if (r.u32(&ok)) r.u32(&ok);                 // uid
+            if (r.u32(&ok)) r.u32(&ok);                 // gid
+            const bool setSize = r.u32(&ok); const quint64 size = setSize ? r.u64(&ok) : 0;
+            if (r.u32(&ok) == 2) { r.u32(&ok); r.u32(&ok); }
+            if (r.u32(&ok) == 2) { r.u32(&ok); r.u32(&ok); }
+            r.u32(&ok);                                 // guard.check = false
+            if (!path.isEmpty()) {
+                if (setMode) { ::chmod(path.toUtf8().constData(), mode & 07777); has = true; }
+                if (setSize) { ::truncate(path.toUtf8().constData(), static_cast<off_t>(size)); has = true; }
+            }
+            Q_UNUSED(has);
+            w.u32(NFS3_OK); putWccData(w, path);
+            return w.data();
+        }
+        if (proc == 7) {                                // WRITE(fh, offset, count, stable, data)
+            const QString path = pathForHandle(readFh(&ok));
+            const quint64 offset = r.u64(&ok);
+            r.u32(&ok);                                 // count (redundant with data length)
+            r.u32(&ok);                                 // stable_how
+            const QByteArray data = r.opaqueVar(&ok);
+            QFile f(path);
+            if (ok && f.open(QIODevice::ReadWrite)) {
+                f.seek(offset);
+                const qint64 wrote = f.write(data);
+                f.close();
+                w.u32(NFS3_OK); putWccData(w, path);
+                w.u32(static_cast<quint32>(wrote));
+                w.u32(2);                               // committed = FILE_SYNC
+                w.opaqueFixed(QByteArray(8, '\0'));     // write verifier
+            } else { w.u32(NFS3ERR_ACCES); putWccData(w, path); }
+            return w.data();
+        }
+        if (proc == 8) {                                // CREATE(dirfh, name, how)
+            const QString dir = pathForHandle(readFh(&ok));
+            const QString name = r.str(&ok);
+            r.u32(&ok);                                 // createmode (UNCHECKED/GUARDED/EXCLUSIVE)
+            skipSattr3(r);
+            const QString child = QDir(dir).filePath(name);
+            QFile f(child);
+            if (ok && !dir.isEmpty() && f.open(QIODevice::WriteOnly)) {
+                f.close();
+                w.u32(NFS3_OK);
+                w.u32(1); w.opaqueVar(fileHandle(child));   // post_op_fh
+                putPostOpAttr(w, child);
+                putWccData(w, dir);
+            } else { w.u32(NFS3ERR_ACCES); putWccData(w, dir); }
+            return w.data();
+        }
+        if (proc == 9) {                                // MKDIR(dirfh, name, sattr3)
+            const QString dir = pathForHandle(readFh(&ok));
+            const QString name = r.str(&ok);
+            skipSattr3(r);
+            const QString child = QDir(dir).filePath(name);
+            if (ok && !dir.isEmpty() && QDir().mkdir(child)) {
+                w.u32(NFS3_OK);
+                w.u32(1); w.opaqueVar(fileHandle(child));
+                putPostOpAttr(w, child);
+                putWccData(w, dir);
+            } else { w.u32(NFS3ERR_ACCES); putWccData(w, dir); }
+            return w.data();
+        }
+        if (proc == 12 || proc == 13) {                 // REMOVE / RMDIR (dirfh, name)
+            const QString dir = pathForHandle(readFh(&ok));
+            const QString name = r.str(&ok);
+            const QString child = QDir(dir).filePath(name);
+            const bool done = ok && !dir.isEmpty() &&
+                (proc == 12 ? QFile::remove(child) : QDir().rmdir(child));
+            w.u32(done ? NFS3_OK : NFS3ERR_ACCES);
+            putWccData(w, dir);
+            return w.data();
+        }
+        if (proc == 14) {                               // RENAME(fromdir, from, todir, to)
+            const QString fromDir = pathForHandle(readFh(&ok));
+            const QString fromName = r.str(&ok);
+            const QString toDir = pathForHandle(readFh(&ok));
+            const QString toName = r.str(&ok);
+            const bool done = ok && !fromDir.isEmpty() && !toDir.isEmpty() &&
+                QFile::rename(QDir(fromDir).filePath(fromName), QDir(toDir).filePath(toName));
+            w.u32(done ? NFS3_OK : NFS3ERR_ACCES);
+            putWccData(w, fromDir);                     // fromdir wcc
+            putWccData(w, toDir);                       // todir wcc
+            return w.data();
+        }
+        if (proc == 21) {                               // COMMIT(fh, offset, count)
+            const QString path = pathForHandle(readFh(&ok));
+            w.u32(NFS3_OK); putWccData(w, path);
+            w.opaqueFixed(QByteArray(8, '\0'));         // verf
+            return w.data();
+        }
+
+        // Anything else genuinely unsupported.
         w.u32(NFS3ERR_ACCES);
         return w.data();
     }

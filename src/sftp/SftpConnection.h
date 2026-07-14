@@ -34,9 +34,14 @@ public:
     // List a remote directory into sorted SftpEntry rows. Returns false on error.
     bool list(const QString& path, QList<SftpEntry>& out);
 
-    // Download/upload a file. Returns bytes transferred, or -1 on error.
+    // Download/upload a file over SFTP. Returns bytes transferred, or -1.
     qint64 download(const QString& remotePath, const QString& localPath);
     qint64 upload(const QString& localPath, const QString& remotePath);
+
+    // Alternative transfer backend: SCP (over the same SSH session). Some servers
+    // allow SCP where SFTP is disabled. Returns bytes transferred, or -1.
+    qint64 scpDownload(const QString& remotePath, const QString& localPath);
+    qint64 scpUpload(const QString& localPath, const QString& remotePath);
 
     // Resolve a path (e.g. "." or a relative path) to its absolute canonical
     // form on the server. Returns an empty string on error.

@@ -3,6 +3,7 @@
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QFileInfo>
 
 using namespace macxterm::tools;
 
@@ -94,6 +95,80 @@ private slots:
         rdArgs.u32(8192);                     // count
         const QByteArray rd = s.handleDatagram(rpcCall(2, 100003, 3, 16, rdArgs.data()));
         QVERIFY(rd.contains("file.txt"));
+        s.stop();
+    }
+
+    void createWriteAndReadBack() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        NfsServer s;
+        QVERIFY(s.start(dir.path(), 2049));
+
+        // Root fh via MNT.
+        XdrWriter mntArgs; mntArgs.str(dir.path());
+        XdrReader mr(s.handleDatagram(rpcCall(1, 100005, 3, 1, mntArgs.data())));
+        bool ok = false;
+        for (int i = 0; i < 6; ++i) mr.u32(&ok);
+        mr.u32(&ok);                                   // status
+        const QByteArray rootFh = mr.opaqueVar(&ok);
+        QVERIFY(ok);
+
+        // CREATE "new.txt" in root.
+        XdrWriter cr;
+        cr.opaqueVar(rootFh);
+        cr.str(QStringLiteral("new.txt"));
+        cr.u32(0);                                     // createmode UNCHECKED
+        cr.u32(0); cr.u32(0); cr.u32(0); cr.u32(0); cr.u32(0); cr.u32(0);   // empty sattr3
+        const QByteArray createReply = s.handleDatagram(rpcCall(2, 100003, 3, 8, cr.data()));
+        // Parse the created file handle out of the reply.
+        XdrReader crr(createReply);
+        for (int i = 0; i < 6; ++i) crr.u32(&ok);      // rpc header
+        QCOMPARE(crr.u32(&ok), 0u);                    // NFS3_OK
+        QCOMPARE(crr.u32(&ok), 1u);                    // handle_follows
+        const QByteArray fileFh = crr.opaqueVar(&ok);
+        QVERIFY(ok);
+        QVERIFY(QFile::exists(dir.filePath("new.txt")));
+
+        // WRITE "hello" at offset 0.
+        XdrWriter wr;
+        wr.opaqueVar(fileFh);
+        wr.u64(0);                                     // offset
+        wr.u32(5);                                     // count
+        wr.u32(2);                                     // stable = FILE_SYNC
+        wr.opaqueVar(QByteArray("hello"));
+        const QByteArray wReply = s.handleDatagram(rpcCall(3, 100003, 3, 7, wr.data()));
+        XdrReader wrr(wReply);
+        for (int i = 0; i < 6; ++i) wrr.u32(&ok);
+        QCOMPARE(wrr.u32(&ok), 0u);                    // NFS3_OK
+
+        // The file on disk now holds "hello".
+        QFile f(dir.filePath("new.txt"));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("hello"));
+        s.stop();
+    }
+
+    void mkdirAndRemove() {
+        QTemporaryDir dir;
+        NfsServer s;
+        QVERIFY(s.start(dir.path(), 2049));
+        XdrWriter mntArgs; mntArgs.str(dir.path());
+        XdrReader mr(s.handleDatagram(rpcCall(1, 100005, 3, 1, mntArgs.data())));
+        bool ok = false;
+        for (int i = 0; i < 6; ++i) mr.u32(&ok);
+        mr.u32(&ok);
+        const QByteArray rootFh = mr.opaqueVar(&ok);
+
+        // MKDIR "sub".
+        XdrWriter mk; mk.opaqueVar(rootFh); mk.str(QStringLiteral("sub"));
+        for (int i = 0; i < 6; ++i) mk.u32(0);         // empty sattr3
+        s.handleDatagram(rpcCall(2, 100003, 3, 9, mk.data()));
+        QVERIFY(QFileInfo(dir.filePath("sub")).isDir());
+
+        // RMDIR "sub".
+        XdrWriter rm; rm.opaqueVar(rootFh); rm.str(QStringLiteral("sub"));
+        s.handleDatagram(rpcCall(3, 100003, 3, 13, rm.data()));
+        QVERIFY(!QFileInfo::exists(dir.filePath("sub")));
         s.stop();
     }
 
