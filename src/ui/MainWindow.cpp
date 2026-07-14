@@ -27,6 +27,8 @@
 #include <QStatusBar>
 #include <QFileInfo>
 #include <QFileDialog>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QTabWidget>
 #include <QTabBar>
 #include <QTreeWidget>
@@ -421,6 +423,25 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
         connect(open, &QAction::triggered, this, [this, name] {
             if (const core::Session* sp = m_sessions.findSession(name)) openSession(*sp);
         });
+        QAction* edit = menu.addAction(QStringLiteral("Edit…"));
+        connect(edit, &QAction::triggered, this, [this, name] {
+            const core::Session* sp = m_sessions.findSession(name);
+            if (!sp) return;
+            SessionDialog dlg(this);
+            dlg.setSession(*sp);
+            if (dlg.exec() == QDialog::Accepted) {
+                deleteSession(name);            // remove the old entry
+                addAndSaveSession(dlg.session());  // save the edited one
+            }
+        });
+        QAction* dup = menu.addAction(QStringLiteral("Duplicate"));
+        connect(dup, &QAction::triggered, this, [this, name] {
+            const core::Session* sp = m_sessions.findSession(name);
+            if (!sp) return;
+            core::Session copy = *sp;
+            copy.setName(name + QStringLiteral(" (copy)"));
+            addAndSaveSession(copy);
+        });
         QAction* del = menu.addAction(QStringLiteral("Delete"));
         connect(del, &QAction::triggered, this, [this, name] {
             if (QMessageBox::question(this, QStringLiteral("Delete session"),
@@ -473,6 +494,13 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
 }
 
 TerminalWidget* MainWindow::openSession(const core::Session& session) {
+    // Browser sessions just open a URL in the system browser.
+    if (session.type() == core::SessionType::Browser) {
+        QString url = session.host();
+        if (!url.contains(QStringLiteral("://"))) url.prepend(QStringLiteral("https://"));
+        QDesktopServices::openUrl(QUrl(url));
+        return nullptr;
+    }
     // RDP/VNC render their own graphics surface, not a VT stream.
     if (session.type() == core::SessionType::Rdp || session.type() == core::SessionType::Vnc) {
         openGraphicalSession(session);
