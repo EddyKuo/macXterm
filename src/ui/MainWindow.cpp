@@ -24,6 +24,9 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QDir>
+#include <QSettings>
+#include <QFont>
+#include "term/ColorScheme.h"
 
 namespace macxterm::ui {
 
@@ -60,6 +63,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     if (m_store.open(dir + QStringLiteral("/sessions.db"))) {
         m_sessions = m_store.loadTree();
     }
+    loadSettings();
 
     buildToolbar();
     reloadSessionTree();
@@ -93,8 +97,16 @@ void MainWindow::buildToolbar() {
 
     auto* settings = tb->addAction(QStringLiteral("Settings"));
     connect(settings, &QAction::triggered, this, [this] {
-        SettingsDialog dlg(core::Settings{}, this);
-        dlg.exec();
+        SettingsDialog dlg(m_settings, this);
+        if (dlg.exec() == QDialog::Accepted) {
+            m_settings = dlg.settings();
+            saveSettings();
+            // Apply immediately to every open terminal pane.
+            for (int i = 0; i < m_tabs->count(); ++i) {
+                if (auto* term = qobject_cast<TerminalWidget*>(m_tabs->widget(i)))
+                    applySettings(term);
+            }
+        }
     });
 
     auto* vault = tb->addAction(QStringLiteral("Vault"));
@@ -184,6 +196,7 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
         default:                        conn = new connect::LocalShellConnection(term); break;
     }
     term->attach(conn);
+    applySettings(term);
     const int idx = m_tabs->addTab(term, session.name());
     m_tabs->setCurrentIndex(idx);
     conn->connectSession(session);
@@ -193,6 +206,32 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
 
 void MainWindow::toggleMultiExec(bool on) {
     m_multiExec = on;
+}
+
+void MainWindow::loadSettings() {
+    QSettings qs(QStringLiteral("macXterm"), QStringLiteral("macXterm"));
+    m_settings.setValue("terminal.font", qs.value("terminal.font", m_settings.fontFamily()));
+    m_settings.setValue("terminal.fontSize", qs.value("terminal.fontSize", m_settings.fontSize()));
+    m_settings.setValue("terminal.scheme", qs.value("terminal.scheme", m_settings.colorScheme()));
+    m_settings.setValue("terminal.scrollback", qs.value("terminal.scrollback", m_settings.scrollbackLines()));
+}
+
+void MainWindow::saveSettings() {
+    QSettings qs(QStringLiteral("macXterm"), QStringLiteral("macXterm"));
+    qs.setValue("terminal.font", m_settings.fontFamily());
+    qs.setValue("terminal.fontSize", m_settings.fontSize());
+    qs.setValue("terminal.scheme", m_settings.colorScheme());
+    qs.setValue("terminal.scrollback", m_settings.scrollbackLines());
+}
+
+void MainWindow::applySettings(TerminalWidget* term) {
+    if (!term) return;
+    term->setColorScheme(term::ColorScheme::byName(m_settings.colorScheme()));
+    QFont f = term->font();
+    const QString fam = m_settings.fontFamily();
+    if (!fam.isEmpty()) f.setFamily(fam);
+    f.setPointSize(m_settings.fontSize());
+    term->setTerminalFont(f);
 }
 
 } // namespace macxterm::ui

@@ -2,6 +2,8 @@
 #include "term/ScreenBuffer.h"
 #include <QObject>
 #include <QByteArray>
+#include <QList>
+#include <QVector>
 
 struct VTerm;
 struct VTermScreen;
@@ -29,6 +31,11 @@ public:
     // Convenience: the current visible screen as text.
     QString screenText() const { return m_screen.toText(); }
 
+    // Scrollback: lines that have scrolled off the top of the screen, oldest
+    // first. Index 0 is the oldest retained line.
+    int scrollbackCount() const { return m_scrollback.size(); }
+    const QVector<Cell>& scrollbackLine(int i) const { return m_scrollback.at(i); }
+
 signals:
     void outputReady(const QByteArray& bytes);
     void screenUpdated();
@@ -40,7 +47,11 @@ private:
     VTermScreen* m_vts = nullptr;
     ScreenBuffer m_screen;
     QByteArray m_pendingOutput;
+    QList<QVector<Cell>> m_scrollback;   // scrolled-off lines (capped)
+    int m_scrollbackMax = 10000;
     friend void vt_output_cb(const char* s, size_t len, void* user);
+    friend int vt_sb_pushline(int cols, const void* cells, void* user);
+    friend int vt_sb_popline(int cols, void* cells, void* user);
 };
 
 } // namespace macxterm::term

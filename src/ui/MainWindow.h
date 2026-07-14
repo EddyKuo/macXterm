@@ -1,6 +1,7 @@
 #pragma once
 #include "core/SessionTree.h"
 #include "core/Store.h"
+#include "core/Settings.h"
 #include <QMainWindow>
 
 class QTabWidget;
@@ -34,11 +35,15 @@ private:
     void addAndSaveSession(const core::Session& s);
     void deleteSession(const QString& name);
     void persistSessions();
+    void loadSettings();
+    void saveSettings();
+    void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
     QTabWidget* m_tabs = nullptr;
     QTreeWidget* m_tree = nullptr;
     core::SessionFolder m_sessions{QStringLiteral("Sessions")};
     core::Store m_store;
+    core::Settings m_settings;
     bool m_multiExec = false;
 };
 

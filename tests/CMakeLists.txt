@@ -42,6 +42,7 @@ set(MACXTERM_TESTS
   test_rdp_live
   test_locale
   test_cjk_probe
+  test_scrollback
 )
 
 foreach(t ${MACXTERM_TESTS})
