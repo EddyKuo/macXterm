@@ -51,7 +51,13 @@ void VtEngine::syncFromVterm() {
             VTermPos pos; pos.row = r; pos.col = c;
             VTermScreenCell vc;
             Cell cell;
-            if (vterm_screen_get_cell(m_vts, pos, &vc) && vc.chars[0] != 0) {
+            // Skip empty cells and the right-hand continuation cell of a
+            // double-width (CJK) glyph — libvterm marks the latter with
+            // chars[0] == (uint32_t)-1. Treating it as a code point produced a
+            // U+FFFD after every wide character (mojibake).
+            if (vterm_screen_get_cell(m_vts, pos, &vc)
+                && vc.chars[0] != 0
+                && vc.chars[0] != static_cast<uint32_t>(-1)) {
                 const uint32_t cp = vc.chars[0];
                 // ScreenBuffer holds one UTF-16 unit per cell; non-BMP code
                 // points (> 0xFFFF) can't fit — QChar(char32_t) would assert —

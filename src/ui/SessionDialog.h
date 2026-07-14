@@ -22,12 +22,18 @@ public:
 private slots:
     void onAccept();
 
+private slots:
+    void browseKeyFile();
+
 private:
     QLineEdit* m_name = nullptr;
     QComboBox* m_type = nullptr;
     QLineEdit* m_host = nullptr;
     QSpinBox*  m_port = nullptr;
     QLineEdit* m_user = nullptr;
+    QLineEdit* m_password = nullptr;
+    QLineEdit* m_keyfile = nullptr;
+    QLineEdit* m_passphrase = nullptr;
 };
 
 } // namespace macxterm::ui
