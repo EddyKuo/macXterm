@@ -5,8 +5,11 @@
 #include "tunnel/SshTunnel.h"
 #include "core/Macro.h"
 #include "core/CredentialVault.h"
+#include "core/ShortcutRegistry.h"
 #include <QMainWindow>
 #include <QHash>
+
+class QAction;
 
 class QTabWidget;
 class QTreeWidget;
@@ -51,6 +54,9 @@ private:
     void persistSessions();
     void loadSettings();
     void saveSettings();
+    void buildShortcuts();          // create registry-driven QActions
+    void applyShortcuts();          // push registry sequences onto the actions
+    void editShortcuts();           // open the shortcut editor dialog
     void openVault();                               // create/unlock the vault
     QString vaultPath() const;
     core::Session resolveSecrets(core::Session s) const;  // inject vault password
@@ -77,6 +83,8 @@ private:
     core::CredentialVault m_vault;
     QString m_masterPassword;
     bool m_vaultUnlocked = false;
+    core::ShortcutRegistry m_shortcuts;
+    QHash<QString, QAction*> m_shortcutActions;
     bool m_multiExec = false;
 };
 

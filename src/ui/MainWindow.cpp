@@ -29,6 +29,9 @@
 #include <QFileDialog>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QKeySequenceEdit>
+#include <QFormLayout>
+#include <QDialogButtonBox>
 #include <QTabWidget>
 #include <QTabBar>
 #include <QTreeWidget>
@@ -91,8 +94,71 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     buildMenus();
     buildToolbar();
+    buildShortcuts();
     reloadSessionTree();
     openLocalShell();
+}
+
+void MainWindow::buildShortcuts() {
+    // Real, registry-driven actions. Adding them to the window activates their
+    // QKeySequence globally; the editor rebinds them at runtime.
+    auto mk = [this](const QString& id, auto fn) {
+        auto* a = new QAction(this);
+        connect(a, &QAction::triggered, this, fn);
+        addAction(a);
+        m_shortcutActions.insert(id, a);
+    };
+    mk(QStringLiteral("terminal.new"), [this] { openLocalShell(); });
+    mk(QStringLiteral("terminal.close"), [this] {
+        const int i = m_tabs->currentIndex();
+        if (i >= 0) { QWidget* w = m_tabs->widget(i); m_tabs->removeTab(i); w->deleteLater(); }
+    });
+    mk(QStringLiteral("tab.next"), [this] {
+        if (m_tabs->count()) m_tabs->setCurrentIndex((m_tabs->currentIndex() + 1) % m_tabs->count());
+    });
+    mk(QStringLiteral("tab.prev"), [this] {
+        if (m_tabs->count()) m_tabs->setCurrentIndex((m_tabs->currentIndex() + m_tabs->count() - 1) % m_tabs->count());
+    });
+    mk(QStringLiteral("view.fullscreen"), [this] { setWindowState(windowState() ^ Qt::WindowFullScreen); });
+
+    // Load any saved overrides.
+    QSettings qs(QStringLiteral("macXterm"), QStringLiteral("macXterm"));
+    for (const QString& id : m_shortcutActions.keys()) {
+        const QString saved = qs.value(QStringLiteral("shortcut/") + id).toString();
+        if (!saved.isEmpty()) m_shortcuts.rebind(id, QKeySequence(saved));
+    }
+    applyShortcuts();
+}
+
+void MainWindow::applyShortcuts() {
+    for (auto it = m_shortcutActions.constBegin(); it != m_shortcutActions.constEnd(); ++it)
+        it.value()->setShortcut(m_shortcuts.sequence(it.key()));
+}
+
+void MainWindow::editShortcuts() {
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Keyboard Shortcuts"));
+    auto* form = new QFormLayout(&dlg);
+    QHash<QString, QKeySequenceEdit*> edits;
+    // Only the actions that are actually wired are editable.
+    const QStringList ids = m_shortcutActions.keys();
+    for (const QString& id : ids) {
+        auto* edit = new QKeySequenceEdit(m_shortcuts.sequence(id), &dlg);
+        form->addRow(id, edit);
+        edits.insert(id, edit);
+    }
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+    QSettings qs(QStringLiteral("macXterm"), QStringLiteral("macXterm"));
+    for (auto it = edits.constBegin(); it != edits.constEnd(); ++it) {
+        m_shortcuts.rebind(it.key(), it.value()->keySequence());   // conflicts are rejected
+        qs.setValue(QStringLiteral("shortcut/") + it.key(), it.value()->keySequence().toString());
+    }
+    applyShortcuts();
 }
 
 void MainWindow::buildMenus() {
@@ -121,6 +187,7 @@ void MainWindow::buildMenus() {
     }
     view->addSeparator();
     view->addAction(QStringLiteral("Detach Current Tab"), this, &MainWindow::detachCurrentTab);
+    view->addAction(QStringLiteral("Keyboard Shortcuts…"), this, &MainWindow::editShortcuts);
 
     QMenu* tools = menuBar()->addMenu(QStringLiteral("&Tools"));
     tools->addAction(QStringLiteral("Port Scanner…"), this, [this] {
