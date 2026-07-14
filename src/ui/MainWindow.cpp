@@ -20,6 +20,10 @@
 #include <QToolBar>
 #include <QAction>
 #include <QKeyEvent>
+#include <QMenu>
+#include <QMessageBox>
+#include <QStandardPaths>
+#include <QDir>
 
 namespace macxterm::ui {
 
@@ -42,10 +46,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     m_tree = new QTreeWidget(this);
     m_tree->setHeaderLabel(QStringLiteral("Sessions"));
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::itemActivated, this, &MainWindow::onTreeActivated);
+    connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &MainWindow::showTreeContextMenu);
     auto* dock = new QDockWidget(QStringLiteral("Sessions"), this);
     dock->setWidget(m_tree);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
+
+    // Open the persistent session store (per-user app data dir) and load saved
+    // sessions so they survive restarts.
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dir);
+    if (m_store.open(dir + QStringLiteral("/sessions.db"))) {
+        m_sessions = m_store.loadTree();
+    }
 
     buildToolbar();
     reloadSessionTree();
@@ -62,8 +76,7 @@ void MainWindow::buildToolbar() {
         SessionDialog dlg(this);
         if (dlg.exec() == QDialog::Accepted) {
             core::Session s = dlg.session();
-            m_sessions.addSession(s);
-            reloadSessionTree();
+            addAndSaveSession(s);   // persist so it survives restart
             openSession(s);
         }
     });
@@ -105,6 +118,48 @@ void MainWindow::onTreeActivated(QTreeWidgetItem* item, int) {
     if (const core::Session* s = m_sessions.findSession(item->text(0))) {
         openSession(*s);
     }
+}
+
+void MainWindow::persistSessions() {
+    if (m_store.isOpen()) m_store.saveTree(m_sessions);
+}
+
+void MainWindow::addAndSaveSession(const core::Session& s) {
+    m_sessions.addSession(s);
+    persistSessions();
+    reloadSessionTree();
+}
+
+void MainWindow::deleteSession(const QString& name) {
+    QList<core::Session>& list = m_sessions.sessions();
+    for (int i = 0; i < list.size(); ++i) {
+        if (list[i].name() == name) { list.removeAt(i); break; }
+    }
+    persistSessions();
+    reloadSessionTree();
+}
+
+void MainWindow::showTreeContextMenu(const QPoint& pos) {
+    QTreeWidgetItem* item = m_tree->itemAt(pos);
+    if (!item) return;
+    const QString name = item->text(0);
+    const core::Session* s = m_sessions.findSession(name);
+
+    QMenu menu(this);
+    if (s) {
+        QAction* open = menu.addAction(QStringLiteral("Open"));
+        connect(open, &QAction::triggered, this, [this, name] {
+            if (const core::Session* sp = m_sessions.findSession(name)) openSession(*sp);
+        });
+        QAction* del = menu.addAction(QStringLiteral("Delete"));
+        connect(del, &QAction::triggered, this, [this, name] {
+            if (QMessageBox::question(this, QStringLiteral("Delete session"),
+                    QStringLiteral("Delete session \"%1\"?").arg(name)) == QMessageBox::Yes) {
+                deleteSession(name);
+            }
+        });
+    }
+    menu.exec(m_tree->viewport()->mapToGlobal(pos));
 }
 
 TerminalWidget* MainWindow::openLocalShell() {

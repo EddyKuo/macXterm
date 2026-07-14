@@ -1,5 +1,6 @@
 #pragma once
 #include "core/SessionTree.h"
+#include "core/Store.h"
 #include <QMainWindow>
 
 class QTabWidget;
@@ -29,10 +30,15 @@ private:
     void buildToolbar();
     void reloadSessionTree();
     void onTreeActivated(QTreeWidgetItem* item, int column);
+    void showTreeContextMenu(const QPoint& pos);
+    void addAndSaveSession(const core::Session& s);
+    void deleteSession(const QString& name);
+    void persistSessions();
 
     QTabWidget* m_tabs = nullptr;
     QTreeWidget* m_tree = nullptr;
     core::SessionFolder m_sessions{QStringLiteral("Sessions")};
+    core::Store m_store;
     bool m_multiExec = false;
 };
 
