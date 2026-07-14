@@ -22,6 +22,9 @@
 #include "ui/ImageViewerDialog.h"
 #include "ui/FolderDiffDialog.h"
 #include "ui/ColorSchemeDialog.h"
+#if defined(MACXTERM_HAVE_WEBENGINE)
+#include "ui/BrowserTab.h"
+#endif
 #include "ui/RemoteMonitorBar.h"
 #include "tools/S3Client.h"
 #include <QListWidget>
@@ -675,12 +678,21 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
         dlg->show();
         return nullptr;
     }
-    // Browser sessions just open a URL in the system browser.
+    // Browser sessions open an embedded web view tab (falls back to the system
+    // browser when built without QtWebEngine).
     if (session.type() == core::SessionType::Browser) {
+#if defined(MACXTERM_HAVE_WEBENGINE)
+        auto* browser = new BrowserTab(m_tabs);
+        browser->load(session.host());
+        const int idx = m_tabs->addTab(browser, session.name());
+        m_tabs->setCurrentIndex(idx);
+        return nullptr;
+#else
         QString url = session.host();
         if (!url.contains(QStringLiteral("://"))) url.prepend(QStringLiteral("https://"));
         QDesktopServices::openUrl(QUrl(url));
         return nullptr;
+#endif
     }
     // RDP/VNC render their own graphics surface, not a VT stream.
     if (session.type() == core::SessionType::Rdp || session.type() == core::SessionType::Vnc) {

@@ -83,6 +83,13 @@ if(MACXTERM_FREERDP)
     ${FREERDP3_LIB} ${FREERDP_CLIENT3_LIB} ${WINPR3_LIB})
 endif()
 
+# libssh (server-capable) — embedded SSH/SFTP server (tools/SshServer.cpp).
+if(MACXTERM_LIBSSH)
+  target_compile_definitions(macxterm_core PUBLIC MACXTERM_HAVE_LIBSSH)
+  target_include_directories(macxterm_core PUBLIC ${SSH_INCLUDE})
+  target_link_libraries(macxterm_core PUBLIC ${SSH_LIB})
+endif()
+
 if(MACXTERM_BUILD_GUI)
   add_executable(macxterm
     ui/main.cpp
@@ -104,6 +111,11 @@ if(MACXTERM_BUILD_GUI)
     ui/ColorSchemeDialog.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
+  if(MACXTERM_WEBENGINE)
+    target_sources(macxterm PRIVATE ui/BrowserTab.cpp)
+    target_compile_definitions(macxterm PRIVATE MACXTERM_HAVE_WEBENGINE)
+    target_link_libraries(macxterm PRIVATE Qt6::WebEngineWidgets)
+  endif()
   set_target_properties(macxterm PROPERTIES
     OUTPUT_NAME "macXterm"
     # Windows: GUI-subsystem app so no console window opens (Qt6::EntryPoint

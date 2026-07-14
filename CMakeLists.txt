@@ -18,7 +18,7 @@ option(MACXTERM_BUILD_TESTS "Build unit tests" ON)
 
 # Help CMake find Homebrew Qt / libs on macOS Apple Silicon.
 if(APPLE)
-  foreach(pkg qt openssl@3 libvterm libssh2 freerdp)
+  foreach(pkg qt openssl@3 libvterm libssh2 libssh freerdp)
     if(EXISTS "/opt/homebrew/opt/${pkg}")
       list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/${pkg}")
     endif()
@@ -26,6 +26,27 @@ if(APPLE)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network SerialPort Sql Test)
+
+# QtWebEngine (optional) — embedded browser session type when present.
+find_package(Qt6 QUIET COMPONENTS WebEngineWidgets)
+if(Qt6WebEngineWidgets_FOUND)
+  set(MACXTERM_WEBENGINE ON)
+  message(STATUS "QtWebEngine found — embedded browser session enabled")
+else()
+  set(MACXTERM_WEBENGINE OFF)
+  message(STATUS "QtWebEngine not found — Browser session falls back to system browser")
+endif()
+
+# libssh (LGPL, optional, server-capable) — embedded SSH/SFTP server.
+find_library(SSH_LIB ssh HINTS /opt/homebrew/opt/libssh/lib)
+find_path(SSH_INCLUDE libssh/libssh.h HINTS /opt/homebrew/opt/libssh/include)
+if(SSH_LIB AND SSH_INCLUDE)
+  set(MACXTERM_LIBSSH ON)
+  message(STATUS "libssh found — embedded SSH/SFTP server enabled")
+else()
+  set(MACXTERM_LIBSSH OFF)
+  message(STATUS "libssh not found — SSH/SFTP server disabled")
+endif()
 
 # ── Third-party C libs (all permissive / MIT-compatible per ADR_6) ──
 find_package(PkgConfig QUIET)
