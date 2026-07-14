@@ -62,6 +62,10 @@ private:
     void openVault();                               // create/unlock the vault
     QString vaultPath() const;
     core::Session resolveSecrets(core::Session s) const;  // inject vault password
+    // If the session has a "gateway" param, open a local SSH tunnel through the
+    // gateway to the target and return a copy pointing at 127.0.0.1:localport
+    // (used to route RDP/VNC/etc. through an SSH jump host). Otherwise returns s.
+    core::Session resolveGateway(const core::Session& s);
     void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
     void showSftpFor(const core::Session& session);

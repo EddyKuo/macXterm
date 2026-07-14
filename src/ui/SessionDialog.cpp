@@ -66,10 +66,13 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         const bool net = (t != core::SessionType::Shell && t != core::SessionType::Serial);
         const bool key = (t == core::SessionType::Ssh || t == core::SessionType::Sftp ||
                           t == core::SessionType::Mosh);
+        // The SSH gateway (jump host) applies to SSH-family sessions and to
+        // RDP/VNC (routed through a local SSH tunnel).
+        const bool gateway = key || t == core::SessionType::Rdp || t == core::SessionType::Vnc;
         form->setRowVisible(m_password, net && t != core::SessionType::Mosh);
         form->setRowVisible(keyRow, key);
         form->setRowVisible(m_passphrase, key);
-        form->setRowVisible(m_gateway, key);
+        form->setRowVisible(m_gateway, gateway);
     };
     connect(m_type, &QComboBox::currentTextChanged, this, [updateVisibility](const QString&){ updateVisibility(); });
     updateVisibility();

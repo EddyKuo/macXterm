@@ -722,7 +722,65 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
     return term;
 }
 
-void MainWindow::openGraphicalSession(const core::Session& session) {
+core::Session MainWindow::resolveGateway(const core::Session& session) {
+    const QString gw = session.param("gateway");
+    if (gw.isEmpty()) return session;
+
+    // Parse the gateway spec "[user@]host[:port]".
+    QString spec = gw, gwUser = session.username();
+    if (const int at = spec.indexOf('@'); at >= 0) { gwUser = spec.left(at); spec = spec.mid(at + 1); }
+    QString gwHost = spec;
+    int gwPort = 22;
+    if (const int c = spec.indexOf(':'); c >= 0) {
+        gwHost = spec.left(c);
+        gwPort = spec.mid(c + 1).toInt();
+        if (gwPort <= 0) gwPort = 22;
+    }
+    if (!session.param("gateway_user").isEmpty()) gwUser = session.param("gateway_user");
+
+    // Build the SSH gateway session (its own optional credentials).
+    core::Session gwSess(gwHost, core::SessionType::Ssh);
+    gwSess.setHost(gwHost);
+    gwSess.setPort(gwPort);
+    gwSess.setUsername(gwUser);
+    if (!session.param("gateway_password").isEmpty())
+        gwSess.setParam("password", session.param("gateway_password"));
+    else if (!session.param("password").isEmpty())
+        gwSess.setParam("password", session.param("password"));
+    if (!session.param("gateway_keyfile").isEmpty())
+        gwSess.setParam("keyfile", session.param("gateway_keyfile"));
+    if (!session.param("gateway_passphrase").isEmpty())
+        gwSess.setParam("passphrase", session.param("gateway_passphrase"));
+
+    // Tunnel: listen on a random local port, forward to the real target.
+    tunnel::Tunnel t;
+    t.kind = tunnel::TunnelKind::Local;
+    t.bindAddr = QStringLiteral("127.0.0.1");
+    t.bindPort = 0;
+    t.targetHost = session.host();
+    t.targetPort = static_cast<quint16>(session.port());
+
+    auto* tun = new tunnel::SshTunnel(this);
+    if (!tun->start(gwSess, t) || tun->listenPort() == 0) {
+        tun->deleteLater();
+        statusBar()->showMessage(QStringLiteral("Gateway tunnel failed; connecting directly"), 4000);
+        return session;
+    }
+    m_tunnels.push_back(tun);
+
+    // Return a copy pointing at the local end of the tunnel.
+    core::Session routed = session;
+    routed.setHost(QStringLiteral("127.0.0.1"));
+    routed.setPort(tun->listenPort());
+    statusBar()->showMessage(
+        QStringLiteral("Routing %1 via gateway %2 (127.0.0.1:%3)")
+            .arg(session.host(), gwHost).arg(tun->listenPort()), 4000);
+    return routed;
+}
+
+void MainWindow::openGraphicalSession(const core::Session& sessionIn) {
+    // Route through an SSH gateway first if configured.
+    const core::Session session = resolveGateway(resolveSecrets(sessionIn));
     auto* surface = new RdpSurfaceWidget(m_tabs);
 
     if (session.type() == core::SessionType::Vnc) {
