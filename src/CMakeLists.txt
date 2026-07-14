@@ -21,6 +21,7 @@ add_library(macxterm_core STATIC
   connect/TelnetProtocol.cpp
   connect/TelnetConnection.cpp
   connect/SerialConnection.cpp
+  connect/FtpConnection.cpp
   connect/RfbProtocol.cpp
   connect/MoshConnection.cpp
   connect/HostKey.cpp

@@ -6,6 +6,7 @@
 #include "connect/SerialConnection.h"
 #include "connect/MoshConnection.h"
 #include "connect/SimpleTcpConnection.h"
+#include "connect/FtpConnection.h"
 #include "connect/RdpConnection.h"
 #include "connect/VncConnection.h"
 #include "ui/SessionDialog.h"
@@ -533,6 +534,7 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
         case core::SessionType::Telnet: conn = new connect::TelnetConnection(term); break;
         case core::SessionType::Serial: conn = new connect::SerialConnection(term); break;
         case core::SessionType::Mosh:   conn = new connect::MoshConnection(term);   break;
+        case core::SessionType::Ftp:    conn = new connect::FtpConnection(term);    break;
         case core::SessionType::Rdp:    conn = new connect::RdpConnection(term);    break;
         case core::SessionType::Vnc:    conn = new connect::VncConnection(term);    break;
         case core::SessionType::Rsh:

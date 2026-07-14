@@ -22,7 +22,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     for (auto t : {core::SessionType::Ssh, core::SessionType::Telnet, core::SessionType::Serial,
                    core::SessionType::Mosh, core::SessionType::Rdp, core::SessionType::Vnc,
                    core::SessionType::Rsh, core::SessionType::Rlogin, core::SessionType::Xdmcp,
-                   core::SessionType::Browser, core::SessionType::Shell}) {
+                   core::SessionType::Ftp, core::SessionType::Browser, core::SessionType::Shell}) {
         m_type->addItem(core::sessionTypeToString(t));
     }
     m_host = new QLineEdit(this);

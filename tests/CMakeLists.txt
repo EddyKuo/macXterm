@@ -30,6 +30,7 @@ set(MACXTERM_TESTS
   test_sessionform
   test_sftpentry
   test_ftp
+  test_ftpclient
   test_ftpserver
   test_tftpserver
   test_tunnelform
