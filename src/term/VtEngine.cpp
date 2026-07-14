@@ -5,6 +5,37 @@
 
 namespace macxterm::term {
 
+namespace {
+// Resolve one libvterm cell color into our CellColor representation. Indexed
+// 0..15 stay as scheme-controlled ANSI indices; the 256-color cube (16..255) and
+// true-color are baked to absolute RGB.
+void mapColor(const VTermColor& col, CellColor& kind, unsigned char& index, unsigned int& rgb) {
+    if (VTERM_COLOR_IS_DEFAULT_FG(&col) || VTERM_COLOR_IS_DEFAULT_BG(&col)) {
+        kind = CellColor::Default;
+        return;
+    }
+    if (VTERM_COLOR_IS_INDEXED(&col)) {
+        const unsigned idx = col.indexed.idx;
+        if (idx < 16) { kind = CellColor::Ansi; index = static_cast<unsigned char>(idx); return; }
+        // xterm 256-color palette → RGB.
+        unsigned r = 0, g = 0, b = 0;
+        if (idx < 232) {
+            const unsigned c = idx - 16;
+            const unsigned lut[6] = {0, 95, 135, 175, 215, 255};
+            r = lut[(c / 36) % 6]; g = lut[(c / 6) % 6]; b = lut[c % 6];
+        } else {
+            r = g = b = 8 + 10 * (idx - 232);
+        }
+        kind = CellColor::Rgb;
+        rgb = (r << 16) | (g << 8) | b;
+        return;
+    }
+    // RGB / true-color.
+    kind = CellColor::Rgb;
+    rgb = (unsigned(col.rgb.red) << 16) | (unsigned(col.rgb.green) << 8) | unsigned(col.rgb.blue);
+}
+} // namespace
+
 // libvterm calls this when the emulator produces output to send back.
 void vt_output_cb(const char* s, size_t len, void* user) {
     auto* self = static_cast<VtEngine*>(user);
@@ -24,6 +55,8 @@ int vt_sb_pushline(int cols, const void* cellsv, void* user) {
                                      : QChar(QChar::ReplacementCharacter);
         cell.bold = cells[c].attrs.bold;
         cell.reverse = cells[c].attrs.reverse;
+        mapColor(cells[c].fg, cell.fgKind, cell.fgIndex, cell.fgRgb);
+        mapColor(cells[c].bg, cell.bgKind, cell.bgIndex, cell.bgRgb);
         line[c] = cell;
     }
     self->m_scrollback.push_back(line);
@@ -171,6 +204,8 @@ void VtEngine::syncFromVterm() {
                                          : QChar(QChar::ReplacementCharacter);
                 cell.bold = vc.attrs.bold;
                 cell.reverse = vc.attrs.reverse;
+                mapColor(vc.fg, cell.fgKind, cell.fgIndex, cell.fgRgb);
+                mapColor(vc.bg, cell.bgKind, cell.bgIndex, cell.bgRgb);
             }
             m_screen.at(r, c) = cell;
         }

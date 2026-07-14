@@ -171,13 +171,29 @@ void TerminalWidget::paintEvent(QPaintEvent*) {
             }
         }
 
+        // Resolve a cell color kind (default/ANSI-index/RGB) to a concrete color.
+        auto resolveFg = [&](const term::Cell* cell) -> QColor {
+            if (!cell || cell->fgKind == term::CellColor::Default) return m_scheme.foreground();
+            if (cell->fgKind == term::CellColor::Ansi) {
+                // Bold brightens the low 8 ANSI colors (common terminal behavior).
+                int idx = cell->fgIndex;
+                if (cell->bold && idx < 8) idx += 8;
+                return m_scheme.ansi(idx);
+            }
+            return QColor(QRgb(0xff000000u | cell->fgRgb));
+        };
+        auto resolveBg = [&](const term::Cell* cell) -> QColor {
+            if (!cell || cell->bgKind == term::CellColor::Default) return bg;
+            if (cell->bgKind == term::CellColor::Ansi) return m_scheme.ansi(cell->bgIndex);
+            return QColor(QRgb(0xff000000u | cell->bgRgb));
+        };
+
         for (int c = 0; c < cols; ++c) {
             const term::Cell* cell = cellAt(absLine, c);
             const int x = c * m_cellW;
-            QColor fg = m_scheme.ansi(cell ? (cell->fg & 0x0f) : 7);
+            QColor fg = resolveFg(cell);
             if (!hlColor.isEmpty() && hlColor[c].isValid()) fg = hlColor[c];
-            QColor cbg = m_scheme.ansi(cell ? (cell->bg & 0x0f) : 0);
-            if (cbg == m_scheme.ansi(0)) cbg = bg;
+            QColor cbg = resolveBg(cell);
             bool reverse = cell && cell->reverse;
 
             // Is this cell inside the selection?

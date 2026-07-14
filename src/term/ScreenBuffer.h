@@ -4,11 +4,21 @@
 
 namespace macxterm::term {
 
-// A single terminal cell: one character plus basic SGR attributes.
+// How a cell's foreground/background color is expressed. Default = use the
+// active color scheme; Ansi = one of the 16 palette entries (scheme-controlled,
+// so live-recolorable); Rgb = an absolute 24-bit color (256-color cube 16..255
+// and true-color).
+enum class CellColor : unsigned char { Default, Ansi, Rgb };
+
+// A single terminal cell: one character plus SGR attributes and full color.
 struct Cell {
     QChar ch = QChar(' ');
-    unsigned char fg = 7;   // default foreground (ANSI index)
-    unsigned char bg = 0;   // default background
+    CellColor fgKind = CellColor::Default;
+    CellColor bgKind = CellColor::Default;
+    unsigned char fgIndex = 7;   // valid when fgKind == Ansi
+    unsigned char bgIndex = 0;   // valid when bgKind == Ansi
+    unsigned int fgRgb = 0;      // 0xRRGGBB, valid when fgKind == Rgb
+    unsigned int bgRgb = 0;
     bool bold = false;
     bool reverse = false;
 };

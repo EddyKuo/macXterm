@@ -58,6 +58,7 @@ set(MACXTERM_TESTS
   test_sshserver_live
   test_nfs
   test_x11server
+  test_truecolor
 )
 
 foreach(t ${MACXTERM_TESTS})
