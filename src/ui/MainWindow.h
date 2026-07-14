@@ -3,6 +3,7 @@
 #include "core/Store.h"
 #include "core/Settings.h"
 #include "tunnel/SshTunnel.h"
+#include "core/Macro.h"
 #include <QMainWindow>
 #include <QHash>
 
@@ -37,6 +38,9 @@ private:
     void buildToolbar();
     void buildMenus();
     void importSshConfig();
+    void detachCurrentTab();
+    void toggleMacroRecording();
+    void playMacro();
     void reloadSessionTree();
     void onTreeActivated(QTreeWidgetItem* item, int column);
     void showTreeContextMenu(const QPoint& pos);
@@ -62,6 +66,8 @@ private:
     core::Settings m_settings;
     QHash<QWidget*, core::Session> m_tabSessions;   // active session per tab
     QList<tunnel::SshTunnel*> m_tunnels;            // live tunnels
+    core::Macro m_macro;                            // last recorded macro
+    bool m_recordingMacro = false;
     bool m_multiExec = false;
 };
 

@@ -20,6 +20,7 @@
 #include <QTimer>
 #include <QImage>
 #include <QMenuBar>
+#include <QStatusBar>
 #include <QFileInfo>
 #include <QTabWidget>
 #include <QTabBar>
@@ -106,6 +107,13 @@ void MainWindow::buildMenus() {
     view->addAction(QStringLiteral("Full Screen"), this, [this] {
         setWindowState(windowState() ^ Qt::WindowFullScreen);
     })->setShortcut(Qt::Key_F11);
+    QMenu* trans = view->addMenu(QStringLiteral("Transparency"));
+    for (int pct : {100, 95, 90, 85, 80}) {
+        trans->addAction(QStringLiteral("%1%").arg(pct), this,
+                         [this, pct] { setWindowOpacity(pct / 100.0); });
+    }
+    view->addSeparator();
+    view->addAction(QStringLiteral("Detach Current Tab"), this, &MainWindow::detachCurrentTab);
 
     QMenu* tools = menuBar()->addMenu(QStringLiteral("&Tools"));
     tools->addAction(QStringLiteral("Port Scanner…"), this, [this] {
@@ -114,12 +122,62 @@ void MainWindow::buildMenus() {
         dlg->show();
     });
 
+    QMenu* macros = menuBar()->addMenu(QStringLiteral("&Macros"));
+    macros->addAction(QStringLiteral("Start/Stop Recording"), this, &MainWindow::toggleMacroRecording)
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
+    macros->addAction(QStringLiteral("Play Macro"), this, &MainWindow::playMacro)
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
+
     QMenu* help = menuBar()->addMenu(QStringLiteral("&Help"));
     help->addAction(QStringLiteral("About macXterm"), this, [this] {
         QMessageBox::about(this, QStringLiteral("About macXterm"),
             QStringLiteral("<b>macXterm</b><br>A native, cross-platform, MIT-licensed "
                            "MobaXterm-style remote toolbox.<br>Built with Qt 6 + C/C++."));
     });
+}
+
+void MainWindow::detachCurrentTab() {
+    const int idx = m_tabs->currentIndex();
+    if (idx < 0) return;
+    QWidget* w = m_tabs->widget(idx);
+    const QString title = m_tabs->tabText(idx);
+    m_tabs->removeTab(idx);
+    auto* win = new QMainWindow;   // top-level floating window
+    win->setAttribute(Qt::WA_DeleteOnClose);
+    win->setWindowTitle(QStringLiteral("macXterm — ") + title);
+    win->setCentralWidget(w);
+    w->show();
+    win->resize(820, 520);
+    win->show();
+}
+
+void MainWindow::toggleMacroRecording() {
+    TerminalWidget* pane = currentPane();
+    if (!pane) return;
+    if (!m_recordingMacro) {
+        m_recordingMacro = true;
+        m_macro = core::Macro(QStringLiteral("recorded"));
+        m_macro.beginRecording();
+        // Record keystrokes while still sending them to the pane.
+        pane->setInputHandler([this, pane](const QByteArray& b) {
+            m_macro.record(b);
+            pane->feedInput(b);
+        });
+        statusBar()->showMessage(QStringLiteral("Recording macro… (Macros ▸ Start/Stop to finish)"));
+    } else {
+        m_recordingMacro = false;
+        m_macro.endRecording();
+        // Restore normal routing (respect MultiExec).
+        if (m_multiExec) pane->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
+        else pane->setInputHandler(nullptr);
+        statusBar()->showMessage(QStringLiteral("Recorded %1 keystroke event(s).").arg(m_macro.eventCount()), 4000);
+    }
+}
+
+void MainWindow::playMacro() {
+    TerminalWidget* pane = currentPane();
+    if (!pane || m_macro.eventCount() == 0) return;
+    m_macro.replay([pane](const QByteArray& b) { pane->feedInput(b); });
 }
 
 void MainWindow::importSshConfig() {
