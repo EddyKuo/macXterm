@@ -15,8 +15,11 @@
 #include "ui/SftpPanel.h"
 #include "ui/RdpSurfaceWidget.h"
 #include "core/Settings.h"
+#include "core/SshConfigImporter.h"
 #include <QTimer>
 #include <QImage>
+#include <QMenuBar>
+#include <QFileInfo>
 #include <QTabWidget>
 #include <QTabBar>
 #include <QTreeWidget>
@@ -75,9 +78,56 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     }
     loadSettings();
 
+    buildMenus();
     buildToolbar();
     reloadSessionTree();
     openLocalShell();
+}
+
+void MainWindow::buildMenus() {
+    QMenu* file = menuBar()->addMenu(QStringLiteral("&File"));
+    file->addAction(QStringLiteral("New Shell"), this, [this] { openLocalShell(); });
+    file->addAction(QStringLiteral("New Session…"), this, [this] {
+        SessionDialog dlg(this);
+        if (dlg.exec() == QDialog::Accepted) { core::Session s = dlg.session(); addAndSaveSession(s); openSession(s); }
+    });
+    file->addSeparator();
+    file->addAction(QStringLiteral("Import from ~/.ssh/config"), this, &MainWindow::importSshConfig);
+    file->addSeparator();
+    file->addAction(QStringLiteral("Quit"), this, [this] { close(); });
+
+    QMenu* view = menuBar()->addMenu(QStringLiteral("&View"));
+    view->addAction(QStringLiteral("Split Right"), this, [this] { splitCurrent(Qt::Horizontal); });
+    view->addAction(QStringLiteral("Split Down"), this, [this] { splitCurrent(Qt::Vertical); });
+    view->addSeparator();
+    view->addAction(QStringLiteral("Full Screen"), this, [this] {
+        setWindowState(windowState() ^ Qt::WindowFullScreen);
+    })->setShortcut(Qt::Key_F11);
+
+    QMenu* help = menuBar()->addMenu(QStringLiteral("&Help"));
+    help->addAction(QStringLiteral("About macXterm"), this, [this] {
+        QMessageBox::about(this, QStringLiteral("About macXterm"),
+            QStringLiteral("<b>macXterm</b><br>A native, cross-platform, MIT-licensed "
+                           "MobaXterm-style remote toolbox.<br>Built with Qt 6 + C/C++."));
+    });
+}
+
+void MainWindow::importSshConfig() {
+    const QString path = QDir::homePath() + QStringLiteral("/.ssh/config");
+    if (!QFileInfo::exists(path)) {
+        QMessageBox::information(this, QStringLiteral("Import"),
+            QStringLiteral("No ~/.ssh/config found."));
+        return;
+    }
+    core::SessionFolder imported = core::SshConfigImporter::importFile(path);
+    int added = 0;
+    for (const core::Session& s : imported.sessions()) {
+        if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); ++added; }
+    }
+    persistSessions();
+    reloadSessionTree();
+    QMessageBox::information(this, QStringLiteral("Import"),
+        QStringLiteral("Imported %1 new session(s) from ~/.ssh/config.").arg(added));
 }
 
 void MainWindow::buildToolbar() {

@@ -35,6 +35,8 @@ public slots:
 
 private:
     void buildToolbar();
+    void buildMenus();
+    void importSshConfig();
     void reloadSessionTree();
     void onTreeActivated(QTreeWidgetItem* item, int column);
     void showTreeContextMenu(const QPoint& pos);
