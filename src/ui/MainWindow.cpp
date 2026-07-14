@@ -14,6 +14,7 @@
 #include "ui/VaultDialog.h"
 #include "core/Settings.h"
 #include <QTabWidget>
+#include <QTabBar>
 #include <QTreeWidget>
 #include <QDockWidget>
 #include <QToolBar>
@@ -29,6 +30,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_tabs = new QTabWidget(this);
     m_tabs->setTabsClosable(true);
     m_tabs->setMovable(true);
+    // Left-align the tab row (some styles center or stretch tabs by default).
+    m_tabs->tabBar()->setExpanding(false);
+    m_tabs->setStyleSheet(QStringLiteral("QTabWidget::tab-bar { alignment: left; }"));
     connect(m_tabs, &QTabWidget::tabCloseRequested, m_tabs, [this](int i) {
         QWidget* w = m_tabs->widget(i);
         m_tabs->removeTab(i);

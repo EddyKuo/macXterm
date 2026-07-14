@@ -16,8 +16,21 @@ static const QColor kAnsi[16] = {
 
 TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
-    QFont f("Menlo", 12);
+    // Cross-platform monospace font with CJK fallbacks. A hard-coded "Menlo"
+    // (macOS-only) falls back to a font with no CJK glyphs on Windows/Linux,
+    // rendering Chinese/Japanese/Korean as tofu/garbage. Qt walks this family
+    // list per glyph, so a Latin monospace face + a CJK face together cover both.
+    QFont f;
     f.setStyleHint(QFont::Monospace);
+#if defined(Q_OS_WIN)
+    f.setFamilies({"Consolas", "Microsoft YaHei Mono", "Microsoft JhengHei", "NSimSun"});
+#elif defined(Q_OS_MACOS)
+    f.setFamilies({"Menlo", "PingFang SC", "Hiragino Sans"});
+#else
+    f.setFamilies({"DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "monospace"});
+#endif
+    f.setFixedPitch(true);
+    f.setPointSize(12);
     setFont(f);
     QFontMetrics fm(f);
     m_cellW = fm.horizontalAdvance('M');

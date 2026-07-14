@@ -83,5 +83,9 @@ if(MACXTERM_BUILD_GUI)
     ui/RdpSurfaceWidget.cpp
   )
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
-  set_target_properties(macxterm PROPERTIES OUTPUT_NAME "macXterm")
+  set_target_properties(macxterm PROPERTIES
+    OUTPUT_NAME "macXterm"
+    # Windows: link as a GUI-subsystem app so no console window opens alongside
+    # the GUI (Qt6::EntryPoint bridges WinMain -> main automatically).
+    WIN32_EXECUTABLE TRUE)
 endif()
