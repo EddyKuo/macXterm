@@ -150,6 +150,12 @@ bool Pty::start(const QString& program, const QStringList& args, int cols, int r
         for (auto& s : argvStore) argv.push_back(s.data());
         argv.push_back(nullptr);
         setenv("TERM", "xterm-256color", 1);
+        // Ensure the shell/child tools run in a UTF-8 locale. When the app is
+        // launched from Finder / as a .app bundle, the environment has no LANG,
+        // so tools fall back to the C locale and mangle CJK/multibyte output.
+        // Use overwrite=0 so an existing user locale (e.g. zh_TW.UTF-8) wins.
+        setenv("LANG", "en_US.UTF-8", 0);
+        setenv("LC_CTYPE", "en_US.UTF-8", 0);
         execvp(prog.constData(), argv.data());
         _exit(127); // exec failed
     }

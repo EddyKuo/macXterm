@@ -85,7 +85,9 @@ if(MACXTERM_BUILD_GUI)
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   set_target_properties(macxterm PROPERTIES
     OUTPUT_NAME "macXterm"
-    # Windows: link as a GUI-subsystem app so no console window opens alongside
-    # the GUI (Qt6::EntryPoint bridges WinMain -> main automatically).
-    WIN32_EXECUTABLE TRUE)
+    # Windows: GUI-subsystem app so no console window opens (Qt6::EntryPoint
+    # bridges WinMain -> main). macOS: a proper .app bundle so launching from
+    # Finder does NOT spawn a Terminal window as its "console".
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE)
 endif()

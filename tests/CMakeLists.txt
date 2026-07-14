@@ -40,6 +40,7 @@ set(MACXTERM_TESTS
   test_serial_pty
   test_telnet_live
   test_rdp_live
+  test_locale
 )
 
 foreach(t ${MACXTERM_TESTS})
