@@ -218,6 +218,21 @@ int SshConnection::openViaJump(const core::Session& session) {
     return sp[0];   // target session's socket fd
 }
 
+// libssh2 keyboard-interactive callback: answer every prompt with the stored
+// password (the common single-prompt case). Reaches the SshConnection via the
+// session abstract set at init.
+static void kbd_callback(const char*, int, const char*, int,
+                         int num_prompts, const LIBSSH2_USERAUTH_KBDINT_PROMPT*,
+                         LIBSSH2_USERAUTH_KBDINT_RESPONSE* responses, void** abstract) {
+    auto* self = abstract ? static_cast<SshConnection*>(*abstract) : nullptr;
+    const QByteArray pw = self ? self->kbdPassword() : QByteArray();
+    for (int i = 0; i < num_prompts; ++i) {
+        responses[i].text = static_cast<char*>(malloc(pw.size()));
+        if (responses[i].text) { memcpy(responses[i].text, pw.constData(), pw.size()); }
+        responses[i].length = static_cast<unsigned int>(pw.size());
+    }
+}
+
 bool SshConnection::doHandshakeAndAuth(const core::Session& session) {
     if (libssh2_session_handshake(m_session, m_sock) != 0) {
         emit errorOccurred("SSH handshake failed");
@@ -234,14 +249,34 @@ bool SshConnection::doHandshakeAndAuth(const core::Session& session) {
             emit errorOccurred("Public-key authentication failed");
             return false;
         }
-    } else {
-        const QByteArray pass = session.param("password").toUtf8();
-        if (libssh2_userauth_password(m_session, user.constData(), pass.constData()) != 0) {
-            emit errorOccurred("Password authentication failed");
-            return false;
-        }
+        return true;
     }
-    return true;
+
+    // Try the local SSH agent first when requested (param "agent" = "1").
+    if (session.param("agent") == "1") {
+        LIBSSH2_AGENT* agent = libssh2_agent_init(m_session);
+        bool agentOk = false;
+        if (agent && libssh2_agent_connect(agent) == 0 && libssh2_agent_list_identities(agent) == 0) {
+            struct libssh2_agent_publickey* id = nullptr;
+            while (libssh2_agent_get_identity(agent, &id, id) == 0) {
+                if (libssh2_agent_userauth(agent, user.constData(), id) == 0) { agentOk = true; break; }
+            }
+        }
+        if (agent) { libssh2_agent_disconnect(agent); libssh2_agent_free(agent); }
+        if (agentOk) return true;
+    }
+
+    const QByteArray pass = session.param("password").toUtf8();
+    if (libssh2_userauth_password(m_session, user.constData(), pass.constData()) == 0)
+        return true;
+
+    // Fall back to keyboard-interactive (answering prompts with the password).
+    m_kbdPassword = pass;
+    if (libssh2_userauth_keyboard_interactive(m_session, user.constData(), &kbd_callback) == 0)
+        return true;
+
+    emit errorOccurred("Authentication failed");
+    return false;
 }
 
 bool SshConnection::connectSession(const core::Session& session) {
@@ -267,6 +302,9 @@ bool SshConnection::connectSession(const core::Session& session) {
     libssh2_session_set_blocking(m_session, 1);
     libssh2_session_callback_set(m_session, LIBSSH2_CALLBACK_X11,
                                  reinterpret_cast<void*>(&ssh_x11_cb));
+    // Optional transport compression (must be requested before the handshake).
+    if (session.param("compression") == "1")
+        libssh2_session_flag(m_session, LIBSSH2_FLAG_COMPRESS, 1);
 
     if (!doHandshakeAndAuth(session)) { cleanup(); setState(State::Failed); return false; }
 
@@ -279,6 +317,10 @@ bool SshConnection::connectSession(const core::Session& session) {
     // Optional X11 forwarding (Architecture §6.3 / research §1.3).
     if (session.param("x11", "1") != "0") {
         libssh2_channel_x11_req(m_channel, 0);
+    }
+    // Optional SSH agent forwarding (param "agentforward" = "1").
+    if (session.param("agentforward") == "1") {
+        libssh2_channel_request_auth_agent(m_channel);
     }
 
     if (libssh2_channel_shell(m_channel) != 0) {

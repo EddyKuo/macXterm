@@ -2,6 +2,8 @@
 #include "tools/HttpServer.h"
 #include "tools/FtpServer.h"
 #include "tools/TftpServer.h"
+#include "tools/TelnetServer.h"
+#include "tools/CronServer.h"
 #include <QDialog>
 #include <QString>
 #include <functional>
@@ -27,9 +29,13 @@ private:
                       std::function<bool()> running,
                       std::function<quint16()> port);
 
+    QWidget* buildCronRow();
+
     tools::HttpServer m_http;
     tools::FtpServer m_ftp;
     tools::TftpServer m_tftp;
+    tools::TelnetServer m_telnet;
+    tools::CronServer m_cron;
 };
 
 } // namespace macxterm::ui

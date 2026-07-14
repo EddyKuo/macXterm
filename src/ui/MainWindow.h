@@ -43,6 +43,8 @@ private:
     void buildToolbar();
     void buildMenus();
     void importSshConfig();
+    void exportSessions();
+    void importSharedSessions();
     void detachCurrentTab();
     void toggleMacroRecording();
     void playMacro();

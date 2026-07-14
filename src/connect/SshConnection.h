@@ -1,6 +1,7 @@
 #pragma once
 #include "connect/IConnection.h"
 #include <vector>
+#include <QByteArray>
 
 class QSocketNotifier;
 typedef struct _LIBSSH2_SESSION LIBSSH2_SESSION;
@@ -30,6 +31,9 @@ public:
     // opens an X connection — connect the local X server and relay both ways.
     void acceptX11(LIBSSH2_CHANNEL* channel);
 
+    // Answer used by the keyboard-interactive auth callback.
+    QByteArray kbdPassword() const { return m_kbdPassword; }
+
 private slots:
     void onSocketReadable();
     void onX11SocketReadable();
@@ -53,6 +57,7 @@ private:
     QSocketNotifier* m_notifier = nullptr;
     std::vector<X11Fwd> m_x11;
     JumpRelay* m_jump = nullptr;
+    QByteArray m_kbdPassword;   // answer for keyboard-interactive prompts
     int m_cols = 80;
     int m_rows = 24;
 };

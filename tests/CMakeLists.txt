@@ -54,6 +54,7 @@ set(MACXTERM_TESTS
   test_highlighter
   test_subnet
   test_folderdiff
+  test_cronexpr
 )
 
 foreach(t ${MACXTERM_TESTS})

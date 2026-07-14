@@ -47,6 +47,9 @@ add_library(macxterm_core STATIC
   tools/FtpCommand.cpp
   tools/FtpServer.cpp
   tools/TftpServer.cpp
+  tools/CronExpr.cpp
+  tools/CronServer.cpp
+  tools/TelnetServer.cpp
   sftp/RemotePath.cpp
   sftp/SftpEntry.cpp
   sftp/SftpConnection.cpp

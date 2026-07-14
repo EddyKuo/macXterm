@@ -29,6 +29,47 @@ ServersDialog::ServersDialog(QWidget* parent) : QDialog(parent) {
         [this](const QString& dir, quint16 port) { return m_tftp.start(dir, port); },
         [this] { m_tftp.stop(); }, [this] { return m_tftp.isRunning(); },
         [this] { return m_tftp.port(); }));
+
+    layout->addWidget(buildRow(QStringLiteral("TELNET (shell)"), false,
+        [this](const QString&, quint16 port) { return m_telnet.start(port); },
+        [this] { m_telnet.stop(); }, [this] { return m_telnet.isRunning(); },
+        [this] { return m_telnet.port(); }));
+
+    layout->addWidget(buildCronRow());
+}
+
+QWidget* ServersDialog::buildCronRow() {
+    auto* box = new QGroupBox(QStringLiteral("CRON scheduler"), this);
+    auto* row = new QHBoxLayout(box);
+    auto* expr = new QLineEdit(QStringLiteral("*/5 * * * *"), box);
+    expr->setToolTip(QStringLiteral("min hour dom month dow"));
+    auto* cmd = new QLineEdit(box);
+    cmd->setPlaceholderText(QStringLiteral("command to run"));
+    auto* status = new QLabel(QStringLiteral("stopped"), box);
+    auto* add = new QPushButton(QStringLiteral("Add job"), box);
+    auto* toggle = new QPushButton(QStringLiteral("Start"), box);
+    connect(add, &QPushButton::clicked, box, [this, expr, cmd, status] {
+        if (cmd->text().isEmpty()) return;
+        if (m_cron.addJob(expr->text(), cmd->text())) {
+            status->setText(QStringLiteral("%1 job(s)").arg(m_cron.jobCount()));
+            cmd->clear();
+        } else {
+            status->setText(QStringLiteral("invalid cron expr"));
+        }
+    });
+    connect(toggle, &QPushButton::clicked, box, [this, toggle, status] {
+        if (m_cron.isRunning()) { m_cron.stop(); toggle->setText(QStringLiteral("Start"));
+            status->setText(QStringLiteral("stopped")); }
+        else { m_cron.start(); toggle->setText(QStringLiteral("Stop"));
+            status->setText(QStringLiteral("running (%1 jobs)").arg(m_cron.jobCount())); }
+    });
+    row->addWidget(new QLabel(QStringLiteral("Sched:"), box));
+    row->addWidget(expr);
+    row->addWidget(cmd, 1);
+    row->addWidget(add);
+    row->addWidget(toggle);
+    row->addWidget(status);
+    return box;
 }
 
 QWidget* ServersDialog::buildRow(const QString& name, bool needsDir,

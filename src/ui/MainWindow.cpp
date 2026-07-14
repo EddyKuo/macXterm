@@ -28,6 +28,7 @@
 #include <QVBoxLayout>
 #include "core/Settings.h"
 #include "core/SshConfigImporter.h"
+#include "core/IniStore.h"
 #include <QTimer>
 #include <QImage>
 #include <QMenuBar>
@@ -177,6 +178,8 @@ void MainWindow::buildMenus() {
     });
     file->addSeparator();
     file->addAction(QStringLiteral("Import from ~/.ssh/config"), this, &MainWindow::importSshConfig);
+    file->addAction(QStringLiteral("Export Sessions…"), this, &MainWindow::exportSessions);
+    file->addAction(QStringLiteral("Import Shared Sessions…"), this, &MainWindow::importSharedSessions);
     file->addSeparator();
     file->addAction(QStringLiteral("Quit"), this, [this] { close(); });
 
@@ -384,6 +387,36 @@ void MainWindow::importSshConfig() {
     reloadSessionTree();
     QMessageBox::information(this, QStringLiteral("Import"),
         QStringLiteral("Imported %1 new session(s) from ~/.ssh/config.").arg(added));
+}
+
+void MainWindow::exportSessions() {
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export sessions"), QStringLiteral("sessions.mxsess"),
+        QStringLiteral("macXterm sessions (*.mxsess *.ini)"));
+    if (path.isEmpty()) return;
+    if (core::IniStore::save(m_sessions, path))
+        statusBar()->showMessage(QStringLiteral("Exported sessions → %1").arg(path), 3000);
+    else
+        QMessageBox::warning(this, windowTitle(), QStringLiteral("Export failed"));
+}
+
+void MainWindow::importSharedSessions() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Import shared sessions"), QString(),
+        QStringLiteral("macXterm sessions (*.mxsess *.ini);;All files (*)"));
+    if (path.isEmpty()) return;
+    core::SessionFolder imported;
+    if (!core::IniStore::load(imported, path)) {
+        QMessageBox::warning(this, windowTitle(), QStringLiteral("Import failed"));
+        return;
+    }
+    int added = 0;
+    for (const core::Session& s : imported.sessions())
+        if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); ++added; }
+    persistSessions();
+    reloadSessionTree();
+    QMessageBox::information(this, QStringLiteral("Import"),
+        QStringLiteral("Imported %1 new session(s).").arg(added));
 }
 
 void MainWindow::buildToolbar() {
