@@ -29,6 +29,7 @@ set(MACXTERM_TESTS
   test_forwarder
   test_httpserver
   test_simpletcp
+  test_xdmcp
   test_sessionform
   test_sessiontree
   test_termconfig

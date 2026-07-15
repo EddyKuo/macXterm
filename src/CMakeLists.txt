@@ -28,6 +28,7 @@ add_library(macxterm_core STATIC
   connect/MoshConnection.cpp
   connect/HostKey.cpp
   connect/SimpleTcpConnection.cpp
+  connect/XdmcpProtocol.cpp
   connect/RdpConnection.cpp
   connect/VncConnection.cpp
   tunnel/Tunnel.cpp
