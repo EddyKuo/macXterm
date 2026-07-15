@@ -71,6 +71,9 @@ private:
 
     void showSftpFor(const core::Session& session);
     void showFtpFor(const core::Session& session);
+    // Hide + disconnect the SFTP/FTP docks when no remaining tab still needs them
+    // (called after a tab closes, so the browser doesn't outlive its session).
+    void syncRemoteDocks();
     void openGraphicalSession(const core::Session& session);  // RDP/VNC surface tab
     TerminalWidget* makePane(const core::Session& session);   // create+connect, no tab
     TerminalWidget* currentPane() const;                      // focused pane of current tab

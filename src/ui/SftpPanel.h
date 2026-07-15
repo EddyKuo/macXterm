@@ -36,6 +36,11 @@ public:
     bool openFor(const core::Session& session);
     bool isConnected() const { return m_fs && m_fs->isReady(); }
 
+    // Tear down the current connection and clear the view (called when the owning
+    // terminal session closes). The panel stays reusable — a later openFor()
+    // reconnects on a fresh backend.
+    void closeSession();
+
 public slots:
     // Called by MainWindow when the associated terminal's working directory
     // changes (via OSC 7). No-op unless "follow terminal folder" is checked.
@@ -69,6 +74,7 @@ private:
     bool eventFilter(QObject*, QEvent*) override;
 
     void initBackend(Backend backend);
+    Backend m_backend = Backend::Sftp;    // which backend this panel drives (for reconnect)
     sftp::IRemoteFs* m_fs = nullptr;      // SFTP or FTP backend (owned via QObject parent)
     QObject* m_fsObj = nullptr;           // same object as QObject, for signal wiring
     QLineEdit* m_pathBar = nullptr;

@@ -89,6 +89,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             m_tabSessions.remove(qobject_cast<QWidget*>(child));
         m_tabs->removeTab(i);
         w->deleteLater();
+        // Close the SFTP/FTP browser once its session's tab is gone.
+        syncRemoteDocks();
     });
     setCentralWidget(m_tabs);
 
@@ -129,7 +131,14 @@ void MainWindow::buildShortcuts() {
     mk(QStringLiteral("terminal.new"), [this] { openLocalShell(); });
     mk(QStringLiteral("terminal.close"), [this] {
         const int i = m_tabs->currentIndex();
-        if (i >= 0) { QWidget* w = m_tabs->widget(i); m_tabs->removeTab(i); w->deleteLater(); }
+        if (i < 0) return;
+        QWidget* w = m_tabs->widget(i);
+        m_tabSessions.remove(w);
+        for (QObject* child : w->findChildren<QObject*>())
+            m_tabSessions.remove(qobject_cast<QWidget*>(child));
+        m_tabs->removeTab(i);
+        w->deleteLater();
+        syncRemoteDocks();
     });
     mk(QStringLiteral("tab.next"), [this] {
         if (m_tabs->count()) m_tabs->setCurrentIndex((m_tabs->currentIndex() + 1) % m_tabs->count());
@@ -1001,6 +1010,16 @@ void MainWindow::showSftpFor(const core::Session& session) {
     }
     m_sftpDock->show();
     m_sftpPanel->openFor(resolveSecrets(session));   // dedicated SFTP session (blocking; LAN-fast)
+}
+
+void MainWindow::syncRemoteDocks() {
+    bool needSftp = false, needFtp = false;
+    for (const core::Session& s : std::as_const(m_tabSessions)) {
+        if (s.type() == core::SessionType::Ssh || s.type() == core::SessionType::Sftp) needSftp = true;
+        if (s.type() == core::SessionType::Ftp) needFtp = true;
+    }
+    if (m_sftpDock && !needSftp) { if (m_sftpPanel) m_sftpPanel->closeSession(); m_sftpDock->hide(); }
+    if (m_ftpDock && !needFtp)   { if (m_ftpPanel)  m_ftpPanel->closeSession();  m_ftpDock->hide(); }
 }
 
 void MainWindow::showFtpFor(const core::Session& session) {

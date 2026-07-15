@@ -107,6 +107,7 @@ SftpPanel::SftpPanel(Backend backend, QWidget* parent) : SftpPanel(parent) {
 }
 
 void SftpPanel::initBackend(Backend backend) {
+    m_backend = backend;
     if (m_fsObj) { m_fsObj->deleteLater(); m_fsObj = nullptr; m_fs = nullptr; }
     if (backend == Backend::Ftp) {
         auto* c = new sftp::FtpClient(this);
@@ -134,6 +135,16 @@ bool SftpPanel::openFor(const core::Session& session) {
     m_home = m_cwd;   // remember the login directory for the Home button
     navigateTo(m_cwd);
     return true;
+}
+
+void SftpPanel::closeSession() {
+    // Re-init drops the old backend (its destructor disconnects) and leaves a
+    // fresh, unconnected one so a future openFor() can reconnect.
+    initBackend(m_backend);
+    if (m_list) m_list->clear();
+    if (m_pathBar) m_pathBar->clear();
+    m_cwd = QStringLiteral(".");
+    setStatus(QStringLiteral("Disconnected"));
 }
 
 void SftpPanel::navigateTo(const QString& path) {
