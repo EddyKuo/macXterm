@@ -1,5 +1,5 @@
 #pragma once
-#include "sftp/SftpConnection.h"
+#include "sftp/IRemoteFs.h"
 #include "core/Session.h"
 #include <QWidget>
 #include <QHash>
@@ -27,11 +27,14 @@ namespace macxterm::ui {
 class SftpPanel : public QWidget {
     Q_OBJECT
 public:
+    // Which remote-filesystem backend the panel drives.
+    enum class Backend { Sftp, Ftp };
     explicit SftpPanel(QWidget* parent = nullptr);
+    SftpPanel(Backend backend, QWidget* parent = nullptr);
 
-    // Connect the panel to a session (SSH/SFTP). Returns false on failure.
+    // Connect the panel to a session (SSH/SFTP or FTP). Returns false on failure.
     bool openFor(const core::Session& session);
-    bool isConnected() const { return m_sftp.isReady(); }
+    bool isConnected() const { return m_fs && m_fs->isReady(); }
 
 public slots:
     // Called by MainWindow when the associated terminal's working directory
@@ -65,7 +68,9 @@ private:
     void dropEvent(QDropEvent*) override;
     bool eventFilter(QObject*, QEvent*) override;
 
-    sftp::SftpConnection m_sftp;
+    void initBackend(Backend backend);
+    sftp::IRemoteFs* m_fs = nullptr;      // SFTP or FTP backend (owned via QObject parent)
+    QObject* m_fsObj = nullptr;           // same object as QObject, for signal wiring
     QLineEdit* m_pathBar = nullptr;
     QTreeWidget* m_list = nullptr;
     QLabel* m_status = nullptr;

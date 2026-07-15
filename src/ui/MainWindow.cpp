@@ -775,6 +775,12 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
         showSftpFor(session);
         return nullptr;
     }
+    // FTP opens the graphical file browser (MobaXterm-style) rather than a
+    // control-channel terminal.
+    if (session.type() == core::SessionType::Ftp) {
+        showFtpFor(session);
+        return nullptr;
+    }
     TerminalWidget* term = makePane(session);
     const int idx = m_tabs->addTab(term, session.name());
     m_tabs->setCurrentIndex(idx);
@@ -968,6 +974,17 @@ void MainWindow::showSftpFor(const core::Session& session) {
     }
     m_sftpDock->show();
     m_sftpPanel->openFor(resolveSecrets(session));   // dedicated SFTP session (blocking; LAN-fast)
+}
+
+void MainWindow::showFtpFor(const core::Session& session) {
+    if (!m_ftpDock) {
+        m_ftpPanel = new SftpPanel(SftpPanel::Backend::Ftp, this);
+        m_ftpDock = new QDockWidget(QStringLiteral("FTP"), this);
+        m_ftpDock->setWidget(m_ftpPanel);
+        addDockWidget(Qt::LeftDockWidgetArea, m_ftpDock);
+    }
+    m_ftpDock->show();
+    m_ftpPanel->openFor(resolveSecrets(session));
 }
 
 void MainWindow::toggleMultiExec(bool on) {

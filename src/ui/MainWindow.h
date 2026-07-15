@@ -70,6 +70,7 @@ private:
     void applySettings(TerminalWidget* term);   // apply scheme+font to one pane
 
     void showSftpFor(const core::Session& session);
+    void showFtpFor(const core::Session& session);
     void openGraphicalSession(const core::Session& session);  // RDP/VNC surface tab
     TerminalWidget* makePane(const core::Session& session);   // create+connect, no tab
     TerminalWidget* currentPane() const;                      // focused pane of current tab
@@ -79,6 +80,8 @@ private:
     QTreeWidget* m_tree = nullptr;
     QDockWidget* m_sftpDock = nullptr;
     SftpPanel* m_sftpPanel = nullptr;
+    QDockWidget* m_ftpDock = nullptr;
+    SftpPanel* m_ftpPanel = nullptr;
     RemoteMonitorBar* m_monitor = nullptr;
     core::SessionFolder m_sessions{QStringLiteral("Sessions")};
     core::Store m_store;

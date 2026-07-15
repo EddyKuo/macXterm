@@ -1,5 +1,6 @@
 #pragma once
 #include "sftp/SftpEntry.h"
+#include "sftp/IRemoteFs.h"
 #include "core/Session.h"
 #include <QObject>
 #include <QString>
@@ -14,7 +15,7 @@ namespace macxterm::sftp {
 // Shares the SSH transport socket; lists directories into SftpEntry rows and
 // reads/writes files. Live operation needs a real sshd; the entry modelling and
 // path handling it relies on (SftpEntry, RemotePath) are unit-tested separately.
-class SftpConnection : public QObject {
+class SftpConnection : public QObject, public IRemoteFs {
     Q_OBJECT
 public:
     explicit SftpConnection(QObject* parent = nullptr);

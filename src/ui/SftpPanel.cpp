@@ -1,6 +1,8 @@
 #include "ui/SftpPanel.h"
 #include "ui/TextEditorDialog.h"
 #include "sftp/RemotePath.h"
+#include "sftp/SftpConnection.h"
+#include "sftp/FtpClient.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QToolButton>
@@ -96,7 +98,24 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
     m_status = new QLabel(this);
     layout->addWidget(m_status);
 
-    connect(&m_sftp, &sftp::SftpConnection::error, this, [this](const QString& m) { setStatus(m); });
+    initBackend(Backend::Sftp);
+}
+
+SftpPanel::SftpPanel(Backend backend, QWidget* parent) : SftpPanel(parent) {
+    initBackend(backend);   // swap the default SFTP backend for the requested one
+}
+
+void SftpPanel::initBackend(Backend backend) {
+    if (m_fsObj) { m_fsObj->deleteLater(); m_fsObj = nullptr; m_fs = nullptr; }
+    if (backend == Backend::Ftp) {
+        auto* c = new sftp::FtpClient(this);
+        connect(c, &sftp::FtpClient::error, this, [this](const QString& m) { setStatus(m); });
+        m_fs = c; m_fsObj = c;
+    } else {
+        auto* c = new sftp::SftpConnection(this);
+        connect(c, &sftp::SftpConnection::error, this, [this](const QString& m) { setStatus(m); });
+        m_fs = c; m_fsObj = c;
+    }
 }
 
 void SftpPanel::setStatus(const QString& msg) { if (m_status) m_status->setText(msg); }
@@ -104,12 +123,12 @@ void SftpPanel::setStatus(const QString& msg) { if (m_status) m_status->setText(
 bool SftpPanel::openFor(const core::Session& session) {
     setStatus(QStringLiteral("Connecting…"));
     QApplication::processEvents();
-    if (!m_sftp.connectSession(session)) {
-        setStatus(QStringLiteral("SFTP connect failed"));
+    if (!m_fs->connectSession(session)) {
+        setStatus(QStringLiteral("Connect failed"));
         return false;
     }
     // Resolve "." to an absolute path so follow-terminal-folder can compare.
-    const QString abs = m_sftp.realpath(QStringLiteral("."));
+    const QString abs = m_fs->realpath(QStringLiteral("."));
     m_cwd = abs.isEmpty() ? QStringLiteral(".") : abs;
     m_home = m_cwd;   // remember the login directory for the Home button
     navigateTo(m_cwd);
@@ -117,9 +136,9 @@ bool SftpPanel::openFor(const core::Session& session) {
 }
 
 void SftpPanel::navigateTo(const QString& path) {
-    if (!m_sftp.isReady()) return;
+    if (!m_fs->isReady()) return;
     QList<sftp::SftpEntry> entries;
-    if (!m_sftp.list(path, entries)) return;   // error() already emitted
+    if (!m_fs->list(path, entries)) return;   // error() already emitted
     m_cwd = path;
     m_pathBar->setText(path);
     // Repopulating with sorting live is O(n log n) per insert; disable while filling.
@@ -154,7 +173,7 @@ void SftpPanel::goHome() { if (!m_home.isEmpty()) navigateTo(m_home); }
 void SftpPanel::setRemoteCwd(const QString& absPath) {
     if (!m_follow || !m_follow->isChecked()) return;
     if (absPath.isEmpty() || absPath == m_cwd) return;
-    if (!m_sftp.isReady()) return;
+    if (!m_fs->isReady()) return;
     navigateTo(absPath);
 }
 
@@ -175,11 +194,11 @@ void SftpPanel::onItemActivated() {
 }
 
 qint64 SftpPanel::downloadTo(const QString& remotePath, const QString& localPath) {
-    return m_sftp.download(remotePath, localPath);
+    return m_fs->download(remotePath, localPath);
 }
 
 void SftpPanel::editRemote(const QString& remotePath) {
-    if (!m_sftp.isReady()) return;
+    if (!m_fs->isReady()) return;
     const QString tmpDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     const QString local = QDir(tmpDir).filePath(
         QStringLiteral("macxterm-%1-%2")
@@ -194,7 +213,7 @@ void SftpPanel::editRemote(const QString& remotePath) {
     connect(ed, &TextEditorDialog::fileSaved, this, [this](const QString& savedLocal) {
         const QString remote = m_editing.value(savedLocal);
         if (remote.isEmpty()) return;
-        const qint64 n = m_sftp.upload(savedLocal, remote);
+        const qint64 n = m_fs->upload(savedLocal, remote);
         setStatus(n >= 0 ? QStringLiteral("Saved back %1 bytes → %2").arg(n).arg(remote)
                          : QStringLiteral("Save-back failed"));
     });
@@ -217,7 +236,7 @@ qint64 SftpPanel::downloadTree(const QString& remote, const QString& local, bool
     // Mirror the remote directory locally, then recurse into its entries.
     if (!QDir().mkpath(local)) return -1;
     QList<sftp::SftpEntry> entries;
-    if (!m_sftp.list(remote, entries)) return -1;
+    if (!m_fs->list(remote, entries)) return -1;
     qint64 total = 0;
     for (const sftp::SftpEntry& e : entries) {
         if (e.name == QStringLiteral(".") || e.name == QStringLiteral("..")) continue;
@@ -236,9 +255,9 @@ qint64 SftpPanel::uploadTree(const QString& local, const QString& remote, QProgr
     if (!fi.isDir()) {
         prog.setLabelText(QStringLiteral("Uploading %1").arg(fi.fileName()));
         QApplication::processEvents();
-        return m_sftp.upload(local, remote);
+        return m_fs->upload(local, remote);
     }
-    m_sftp.makeDir(remote);   // best-effort; may already exist
+    m_fs->makeDir(remote);   // best-effort; may already exist
     qint64 total = 0;
     QDirIterator it(local, QDir::AllEntries | QDir::NoDotAndDotDot);
     while (it.hasNext()) {
@@ -255,7 +274,7 @@ qint64 SftpPanel::uploadTree(const QString& local, const QString& remote, QProgr
 void SftpPanel::download() {
     bool isDir = false;
     const QString name = selectedName(&isDir);
-    if (name.isEmpty() || !m_sftp.isReady()) return;
+    if (name.isEmpty() || !m_fs->isReady()) return;
     const QString remote = sftp::RemotePath::join(m_cwd, name);
     QString local;
     if (isDir) {
@@ -277,18 +296,18 @@ void SftpPanel::download() {
 }
 
 void SftpPanel::upload() {
-    if (!m_sftp.isReady()) return;
+    if (!m_fs->isReady()) return;
     const QString local = QFileDialog::getOpenFileName(this, QStringLiteral("Upload file"));
     if (local.isEmpty()) return;
     const QString remote = sftp::RemotePath::join(m_cwd, QFileInfo(local).fileName());
-    const qint64 n = m_sftp.upload(local, remote);
+    const qint64 n = m_fs->upload(local, remote);
     setStatus(n >= 0 ? QStringLiteral("Uploaded %1 bytes").arg(n)
                      : QStringLiteral("Upload failed"));
     if (n >= 0) refresh();
 }
 
 void SftpPanel::uploadFolder() {
-    if (!m_sftp.isReady()) return;
+    if (!m_fs->isReady()) return;
     const QString local = QFileDialog::getExistingDirectory(this, QStringLiteral("Upload folder"));
     if (local.isEmpty()) return;
     const QString remote = sftp::RemotePath::join(m_cwd, QFileInfo(local).fileName());
@@ -303,7 +322,7 @@ void SftpPanel::uploadFolder() {
 }
 
 void SftpPanel::showContextMenu(const QPoint& pos) {
-    if (!m_sftp.isReady()) return;
+    if (!m_fs->isReady()) return;
     bool isDir = false;
     const QString name = selectedName(&isDir);
     QMenu menu(this);
@@ -316,7 +335,7 @@ void SftpPanel::showContextMenu(const QPoint& pos) {
                 const QString local = QFileDialog::getSaveFileName(
                     this, QStringLiteral("Download (SCP) to"), name);
                 if (local.isEmpty()) return;
-                const qint64 n = m_sftp.scpDownload(target, local);
+                const qint64 n = m_fs->scpDownload(target, local);
                 setStatus(n >= 0 ? QStringLiteral("SCP downloaded %1 bytes").arg(n)
                                  : QStringLiteral("SCP download failed"));
             });
@@ -331,19 +350,19 @@ void SftpPanel::showContextMenu(const QPoint& pos) {
             if (!ok) return;
             bool valid = false;
             const uint m = mode.toUInt(&valid, 8);
-            if (valid && m_sftp.chmod(target, m)) refresh();
+            if (valid && m_fs->chmod(target, m)) refresh();
         });
         menu.addAction(QStringLiteral("Rename…"), this, [this, target, name] {
             bool ok = false;
             const QString nn = QInputDialog::getText(this, QStringLiteral("Rename"),
                 QStringLiteral("New name:"), QLineEdit::Normal, name, &ok);
-            if (ok && !nn.isEmpty() && m_sftp.rename(target, sftp::RemotePath::join(m_cwd, nn)))
+            if (ok && !nn.isEmpty() && m_fs->rename(target, sftp::RemotePath::join(m_cwd, nn)))
                 refresh();
         });
         menu.addAction(QStringLiteral("Delete"), this, [this, target, isDir, name] {
             if (QMessageBox::question(this, QStringLiteral("Delete"),
                     QStringLiteral("Delete %1?").arg(name)) != QMessageBox::Yes) return;
-            const bool ok = isDir ? m_sftp.removeDir(target) : m_sftp.removeFile(target);
+            const bool ok = isDir ? m_fs->removeDir(target) : m_fs->removeFile(target);
             if (ok) refresh();
         });
         menu.addSeparator();
@@ -352,7 +371,7 @@ void SftpPanel::showContextMenu(const QPoint& pos) {
         bool ok = false;
         const QString nn = QInputDialog::getText(this, QStringLiteral("New folder"),
             QStringLiteral("Folder name:"), QLineEdit::Normal, QString(), &ok);
-        if (ok && !nn.isEmpty() && m_sftp.makeDir(sftp::RemotePath::join(m_cwd, nn))) refresh();
+        if (ok && !nn.isEmpty() && m_fs->makeDir(sftp::RemotePath::join(m_cwd, nn))) refresh();
     });
     menu.addAction(QStringLiteral("Upload file…"), this, &SftpPanel::upload);
     menu.addAction(QStringLiteral("Upload folder…"), this, &SftpPanel::uploadFolder);
@@ -363,11 +382,11 @@ void SftpPanel::showContextMenu(const QPoint& pos) {
 // ── Drag-and-drop ───────────────────────────────────────────────────────────
 
 void SftpPanel::dragEnterEvent(QDragEnterEvent* e) {
-    if (m_sftp.isReady() && e->mimeData()->hasUrls()) e->acceptProposedAction();
+    if (m_fs->isReady() && e->mimeData()->hasUrls()) e->acceptProposedAction();
 }
 
 void SftpPanel::dropEvent(QDropEvent* e) {
-    if (!m_sftp.isReady() || !e->mimeData()->hasUrls()) return;
+    if (!m_fs->isReady() || !e->mimeData()->hasUrls()) return;
     QProgressDialog prog(QStringLiteral("Uploading…"), QStringLiteral("Cancel"), 0, 0, this);
     prog.setWindowModality(Qt::WindowModal);
     int ok = 0;
@@ -394,7 +413,7 @@ bool SftpPanel::eventFilter(QObject* obj, QEvent* ev) {
                 (me->pos() - m_dragStart).manhattanLength() >= QApplication::startDragDistance()) {
                 bool isDir = false;
                 const QString name = selectedName(&isDir);
-                if (!name.isEmpty() && !isDir && m_sftp.isReady()) {
+                if (!name.isEmpty() && !isDir && m_fs->isReady()) {
                     const QString remote = sftp::RemotePath::join(m_cwd, name);
                     const QString tmp = QDir(QStandardPaths::writableLocation(
                         QStandardPaths::TempLocation)).filePath(name);
