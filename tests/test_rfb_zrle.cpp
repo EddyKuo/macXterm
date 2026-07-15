@@ -1,6 +1,7 @@
 #include "connect/RfbProtocol.h"
 #include <QtTest/QtTest>
 #include <zlib.h>
+#include <algorithm>
 
 using namespace macxterm::connect::rfb;
 
@@ -139,6 +140,30 @@ private slots:
         const RectData d2 = decodeZRLERect(z, r, p2, 0, 4);
         QVERIFY(d2.complete);
         QCOMPARE(d2.pixels[0], GREEN);
+    }
+
+    void largeOutputDrainsFully() {
+        // 128×128 = four 64×64 raw tiles → ~49 KB inflated, far exceeding the
+        // 16 KB inflate output buffer, so the drain loop must iterate several
+        // times and reassemble every chunk. Exercises the multi-buffer drain
+        // path (the avail_out==0 loop); a decoder that stopped after one buffer
+        // would leave later tiles short → bad latched → pixels cleared.
+        const int W = 128, H = 128;
+        QByteArray tiles;
+        for (int ty = 0; ty < H; ty += 64) {
+            const int th = std::min(64, H - ty);
+            for (int tx = 0; tx < W; tx += 64) {
+                const int tw = std::min(64, W - tx);
+                tiles.append(char(0));   // raw tile
+                for (int i = 0; i < tw * th; ++i) appendCPixel(tiles, RED);
+            }
+        }
+        Deflater def; RfbZlibStream z;
+        Rectangle r; r.width = W; r.height = H; r.encoding = EncZRLE;
+        const RectData d = decodeZRLERect(z, r, zrlePayload(def(tiles)), 0, 4);
+        QVERIFY(d.complete);
+        QCOMPARE(d.pixels.size(), W * H);
+        for (quint32 p : d.pixels) QCOMPARE(p, RED);
     }
 
     void incompleteBlockWaits() {

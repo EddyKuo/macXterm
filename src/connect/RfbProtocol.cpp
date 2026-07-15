@@ -265,17 +265,20 @@ QByteArray RfbZlibStream::inflate(const QByteArray& compressed) {
     d->zs.avail_in = static_cast<uInt>(compressed.size());
     QByteArray out;
     char buf[16384];
-    // The sender flushes (Z_SYNC_FLUSH) at each rectangle boundary, so draining
-    // until avail_in hits 0 yields exactly this rectangle's tile bytes.
-    while (d->zs.avail_in > 0) {
+    // Drain on the FULL-OUTPUT-BUFFER signal, not on avail_in: a completely
+    // filled output buffer means zlib may still hold pending bytes (an in-flight
+    // match), even once all input is consumed. Stopping at avail_in==0 could
+    // strand those bytes and mis-attribute them to the next rectangle, since the
+    // inflate context is persistent. Keep calling while avail_out hits 0.
+    int rc;
+    do {
         d->zs.next_out = reinterpret_cast<Bytef*>(buf);
         d->zs.avail_out = sizeof(buf);
-        const int rc = ::inflate(&d->zs, Z_SYNC_FLUSH);
+        rc = ::inflate(&d->zs, Z_SYNC_FLUSH);
         if (rc != Z_OK && rc != Z_STREAM_END && rc != Z_BUF_ERROR) { m_failed = true; return out; }
         out.append(buf, static_cast<int>(sizeof(buf) - d->zs.avail_out));
-        if (rc == Z_BUF_ERROR) break;   // no forward progress possible
-        if (rc == Z_STREAM_END) break;
-    }
+        if (rc == Z_STREAM_END || rc == Z_BUF_ERROR) break;   // done / needs more input
+    } while (d->zs.avail_out == 0);
     return out;
 }
 
