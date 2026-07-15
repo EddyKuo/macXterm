@@ -188,8 +188,22 @@ void VtEngine::scanPrivateModes(const QByteArray& bytes) {
         case 3:
             if (b == 'h' || b == 'l') {       // set / reset
                 const bool set = (b == 'h');
-                for (const QByteArray& p : m_csiParams.split(';'))
-                    if (p == "2004") m_bracketedPaste = set;
+                for (const QByteArray& p : m_csiParams.split(';')) {
+                    const int mode = p.toInt();
+                    switch (mode) {
+                    case 2004: m_bracketedPaste = set; break;
+                    // Mouse tracking level.
+                    case 9:    m_mouseTracking = set ? MouseTracking::X10 : MouseTracking::None; break;
+                    case 1000: m_mouseTracking = set ? MouseTracking::Normal : MouseTracking::None; break;
+                    case 1002: m_mouseTracking = set ? MouseTracking::ButtonEvent : MouseTracking::None; break;
+                    case 1003: m_mouseTracking = set ? MouseTracking::AnyMotion : MouseTracking::None; break;
+                    // Mouse wire encoding.
+                    case 1005: m_mouseEncoding = set ? MouseEncoding::Utf8 : MouseEncoding::Default; break;
+                    case 1006: m_mouseEncoding = set ? MouseEncoding::Sgr : MouseEncoding::Default; break;
+                    case 1015: m_mouseEncoding = set ? MouseEncoding::Urxvt : MouseEncoding::Default; break;
+                    default: break;
+                    }
+                }
                 m_csiState = 0;
             } else if ((b >= '0' && b <= '9') || b == ';') {
                 if (m_csiParams.size() < 64) m_csiParams.append(static_cast<char>(b));

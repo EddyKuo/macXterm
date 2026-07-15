@@ -50,6 +50,15 @@ public:
     // paste from typed input.
     bool bracketedPaste() const { return m_bracketedPaste; }
 
+    // Mouse reporting the far-end app has requested (DECSET 9/1000/1002/1003 for
+    // tracking level; 1006/1005/1015 for the wire encoding). The widget uses
+    // these to encode mouse events and send them to the remote.
+    enum class MouseTracking { None, X10, Normal, ButtonEvent, AnyMotion };
+    enum class MouseEncoding { Default, Utf8, Sgr, Urxvt };
+    MouseTracking mouseTracking() const { return m_mouseTracking; }
+    MouseEncoding mouseEncoding() const { return m_mouseEncoding; }
+    bool mouseEnabled() const { return m_mouseTracking != MouseTracking::None; }
+
 signals:
     void outputReady(const QByteArray& bytes);
     void screenUpdated();
@@ -74,6 +83,8 @@ private:
     int m_csiState = 0;                  // 0 normal, 1 saw ESC, 2 saw '[', 3 in '?...' body
     QByteArray m_csiParams;
     bool m_bracketedPaste = false;
+    MouseTracking m_mouseTracking = MouseTracking::None;
+    MouseEncoding m_mouseEncoding = MouseEncoding::Default;
     friend void vt_output_cb(const char* s, size_t len, void* user);
     friend int vt_sb_pushline(int cols, const void* cells, void* user);
     friend int vt_sb_popline(int cols, void* cells, void* user);

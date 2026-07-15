@@ -291,7 +291,74 @@ QPoint TerminalWidget::cellForPos(const QPoint& pt) const {
     return QPoint(c, topLine() + r);
 }
 
+// Encode and transmit one mouse event to the far end using the active mouse
+// encoding (default X10-style or SGR 1006). col1/row1 are 1-based.
+void TerminalWidget::sendMouseReport(int cb, int col1, int row1, bool release) {
+    QByteArray out;
+    if (m_vt.mouseEncoding() == term::VtEngine::MouseEncoding::Sgr) {
+        out = "\x1b[<" + QByteArray::number(cb) + ';'
+              + QByteArray::number(col1) + ';' + QByteArray::number(row1)
+              + (release ? 'm' : 'M');
+    } else {
+        // Legacy X10 encoding: bytes are offset by 32; release uses button 3.
+        const int b = release ? (cb | 3) : cb;
+        auto clampByte = [](int v) { return static_cast<char>(std::clamp(v, 0, 223) + 32); };
+        out = "\x1b[M";
+        out += static_cast<char>(std::clamp(b, 0, 223) + 32);
+        out += clampByte(col1);
+        out += clampByte(row1);
+    }
+    sendInput(out);
+}
+
+// Map a widget position to a 1-based (col,row) within the visible screen and,
+// if the far-end app requested mouse reporting (and Shift isn't forcing local
+// selection), send the event and return true.
+bool TerminalWidget::reportMouseIfEnabled(QMouseEvent* e, int cbBase, bool release, bool motion) {
+    if (!m_vt.mouseEnabled()) return false;
+    if (e->modifiers().testFlag(Qt::ShiftModifier)) return false;  // Shift = local override
+
+    const auto tracking = m_vt.mouseTracking();
+    if (motion) {
+        // Motion only reported in button-event (with a button held) or any-motion modes.
+        if (tracking == term::VtEngine::MouseTracking::AnyMotion) { /* always */ }
+        else if (tracking == term::VtEngine::MouseTracking::ButtonEvent && m_mouseBtn >= 0) { /* held */ }
+        else return false;
+    }
+
+    const int col1 = std::clamp(int(e->position().x()) / m_cellW, 0, m_vt.cols() - 1) + 1;
+    const int row1 = std::clamp(int(e->position().y()) / m_cellH, 0, m_vt.rows() - 1) + 1;
+    if (motion) {
+        const QPoint cell(col1, row1);
+        if (cell == m_lastMouseCell) return true;   // dedupe: same cell, no report
+        m_lastMouseCell = cell;
+    }
+
+    int cb = cbBase;
+    if (motion) cb += 32;                            // motion flag
+    if (e->modifiers().testFlag(Qt::ShiftModifier))   cb += 4;
+    if (e->modifiers().testFlag(Qt::AltModifier))     cb += 8;
+    if (e->modifiers().testFlag(Qt::ControlModifier)) cb += 16;
+    sendMouseReport(cb, col1, row1, release);
+    return true;
+}
+
+static int buttonBaseCode(Qt::MouseButton b) {
+    switch (b) {
+        case Qt::LeftButton:   return 0;
+        case Qt::MiddleButton: return 1;
+        case Qt::RightButton:  return 2;
+        default:               return 0;
+    }
+}
+
 void TerminalWidget::mousePressEvent(QMouseEvent* e) {
+    const int base = buttonBaseCode(e->button());
+    if (reportMouseIfEnabled(e, base, /*release=*/false, /*motion=*/false)) {
+        m_mouseBtn = base;
+        m_lastMouseCell = {-1, -1};
+        return;
+    }
     if (e->button() == Qt::LeftButton) {
         m_selecting = true;
         m_hasSelection = false;
@@ -303,6 +370,11 @@ void TerminalWidget::mousePressEvent(QMouseEvent* e) {
 }
 
 void TerminalWidget::mouseMoveEvent(QMouseEvent* e) {
+    // Report drag/motion to the far end when it has asked for it.
+    if (m_vt.mouseEnabled() && !m_selecting) {
+        const int base = (m_mouseBtn >= 0) ? m_mouseBtn : 3;  // 3 = no button (any-motion)
+        if (reportMouseIfEnabled(e, base, /*release=*/false, /*motion=*/true)) return;
+    }
     if (m_selecting) {
         m_selHead = cellForPos(e->pos());
         m_hasSelection = (m_selHead != m_selAnchor);
@@ -311,6 +383,11 @@ void TerminalWidget::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void TerminalWidget::mouseReleaseEvent(QMouseEvent* e) {
+    if (m_mouseBtn >= 0 && m_vt.mouseEnabled()) {
+        reportMouseIfEnabled(e, buttonBaseCode(e->button()), /*release=*/true, /*motion=*/false);
+        m_mouseBtn = -1;
+        return;
+    }
     if (e->button() == Qt::LeftButton) {
         m_selecting = false;
         if (m_hasSelection) copySelection();   // auto-copy on select (MobaXterm-like)
@@ -320,6 +397,15 @@ void TerminalWidget::mouseReleaseEvent(QMouseEvent* e) {
 void TerminalWidget::wheelEvent(QWheelEvent* e) {
     const int steps = e->angleDelta().y() / 120;
     if (steps == 0) return;
+    // When the far-end app grabs the mouse (and Shift isn't held), report wheel
+    // as buttons 64 (up) / 65 (down) instead of scrolling the local scrollback.
+    if (m_vt.mouseEnabled() && !e->modifiers().testFlag(Qt::ShiftModifier)) {
+        const int cb = (steps > 0) ? 64 : 65;
+        const int col1 = std::clamp(int(e->position().x()) / m_cellW, 0, m_vt.cols() - 1) + 1;
+        const int row1 = std::clamp(int(e->position().y()) / m_cellH, 0, m_vt.rows() - 1) + 1;
+        for (int i = 0; i < std::abs(steps); ++i) sendMouseReport(cb, col1, row1, false);
+        return;
+    }
     m_scrollOffset += steps * 3;   // 3 lines per wheel notch
     m_scrollOffset = std::clamp(m_scrollOffset, 0, m_vt.scrollbackCount());
     update();

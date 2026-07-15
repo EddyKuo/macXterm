@@ -88,6 +88,10 @@ protected:
 private:
     void recomputeGrid();
     void updateCellMetrics();
+    // Mouse reporting: encode one event for the far-end app per the active mode.
+    // cb is the button/motion code (before the +32 offset); col1/row1 are 1-based.
+    bool reportMouseIfEnabled(QMouseEvent* e, int cbBase, bool release, bool motion);
+    void sendMouseReport(int cb, int col1, int row1, bool release);
     int  totalLines() const;              // scrollback + visible rows
     int  topLine() const;                 // absolute index of the first visible row
     const term::Cell* cellAt(int absLine, int col) const;  // scrollback or screen
@@ -110,6 +114,8 @@ private:
     int m_scrollOffset = 0;               // 0 = live bottom; >0 = scrolled up
     bool m_selecting = false;
     bool m_hasSelection = false;
+    int m_mouseBtn = -1;                  // button currently held for motion reports
+    QPoint m_lastMouseCell{-1, -1};       // last reported (col,row) to dedupe motion
     QPoint m_selAnchor;                   // (col, absLine)
     QPoint m_selHead;                     // (col, absLine)
 };

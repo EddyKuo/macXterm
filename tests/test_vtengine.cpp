@@ -112,6 +112,35 @@ private slots:
         vt.input(QByteArray("04h"));
         QVERIFY(vt.bracketedPaste());
     }
+
+    void mouseTrackingModes() {
+        VtEngine vt(3, 20);
+        QVERIFY(!vt.mouseEnabled());
+        vt.input(QByteArray("\x1b[?1000h"));
+        QCOMPARE(vt.mouseTracking(), VtEngine::MouseTracking::Normal);
+        QVERIFY(vt.mouseEnabled());
+        vt.input(QByteArray("\x1b[?1002h"));
+        QCOMPARE(vt.mouseTracking(), VtEngine::MouseTracking::ButtonEvent);
+        vt.input(QByteArray("\x1b[?1002l"));
+        QVERIFY(!vt.mouseEnabled());
+    }
+
+    void mouseSgrEncoding() {
+        VtEngine vt(3, 20);
+        QCOMPARE(vt.mouseEncoding(), VtEngine::MouseEncoding::Default);
+        vt.input(QByteArray("\x1b[?1006h"));
+        QCOMPARE(vt.mouseEncoding(), VtEngine::MouseEncoding::Sgr);
+        vt.input(QByteArray("\x1b[?1006l"));
+        QCOMPARE(vt.mouseEncoding(), VtEngine::MouseEncoding::Default);
+    }
+
+    void combinedMouseAndPasteInOneSequence() {
+        VtEngine vt(3, 20);
+        vt.input(QByteArray("\x1b[?1002h\x1b[?1006h\x1b[?2004h"));
+        QCOMPARE(vt.mouseTracking(), VtEngine::MouseTracking::ButtonEvent);
+        QCOMPARE(vt.mouseEncoding(), VtEngine::MouseEncoding::Sgr);
+        QVERIFY(vt.bracketedPaste());
+    }
 };
 
 QTEST_APPLESS_MAIN(TestVtEngine)
