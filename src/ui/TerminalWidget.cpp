@@ -9,6 +9,10 @@
 #include <QMenu>
 #include <QApplication>
 #include <QClipboard>
+#include <QLineEdit>
+#include <QLabel>
+#include <QToolButton>
+#include <QHBoxLayout>
 #include <QFile>
 #include <QMessageBox>
 #include <QTimer>
@@ -117,7 +121,10 @@ void TerminalWidget::recomputeGrid() {
     if (m_conn) m_conn->resize(cols, rows);
 }
 
-void TerminalWidget::resizeEvent(QResizeEvent*) { recomputeGrid(); }
+void TerminalWidget::resizeEvent(QResizeEvent*) {
+    recomputeGrid();
+    if (m_findBar && m_findBar->isVisible()) positionFindBar();
+}
 
 // ── line addressing across scrollback + live screen ──
 int TerminalWidget::totalLines() const { return m_vt.scrollbackCount() + m_vt.rows(); }
@@ -254,6 +261,13 @@ void TerminalWidget::keyPressEvent(QKeyEvent* e) {
     if (pasteCombo || (e->key() == Qt::Key_Insert && e->modifiers().testFlag(Qt::ShiftModifier))) {
         paste(); return;
     }
+    // Find in scrollback: Cmd+F (macOS) / Ctrl+Shift+F (elsewhere).
+#if defined(Q_OS_MACOS)
+    const bool findCombo = cmd && e->key() == Qt::Key_F;
+#else
+    const bool findCombo = cmd && e->modifiers().testFlag(Qt::ShiftModifier) && e->key() == Qt::Key_F;
+#endif
+    if (findCombo) { showFindBar(); return; }
     // Page-up/down scrolls the scrollback when Shift is held.
     if (e->modifiers().testFlag(Qt::ShiftModifier) &&
         (e->key() == Qt::Key_PageUp || e->key() == Qt::Key_PageDown)) {
@@ -492,6 +506,118 @@ void TerminalWidget::clearScrollback() {
     update();
 }
 
+// ── scrollback find ──
+QString TerminalWidget::lineText(int absLine) const {
+    QString s;
+    const int cols = m_vt.cols();
+    s.reserve(cols);
+    for (int c = 0; c < cols; ++c) {
+        const term::Cell* cell = cellAt(absLine, c);
+        s.append((cell && !cell->ch.isNull()) ? cell->ch : QChar(' '));
+    }
+    return s;
+}
+
+void TerminalWidget::showFindBar() {
+    if (!m_findBar) {
+        m_findBar = new QWidget(this);
+        m_findBar->setAutoFillBackground(true);
+        auto* lay = new QHBoxLayout(m_findBar);
+        lay->setContentsMargins(6, 2, 6, 2);
+        lay->setSpacing(4);
+        m_findEdit = new QLineEdit(m_findBar);
+        m_findEdit->setPlaceholderText(QStringLiteral("Find in scrollback"));
+        m_findEdit->setMaximumWidth(200);
+        m_findCount = new QLabel(m_findBar);
+        auto* prev = new QToolButton(m_findBar); prev->setText(QStringLiteral("▲"));
+        auto* next = new QToolButton(m_findBar); next->setText(QStringLiteral("▼"));
+        auto* close = new QToolButton(m_findBar); close->setText(QStringLiteral("✕"));
+        lay->addWidget(m_findEdit);
+        lay->addWidget(m_findCount);
+        lay->addWidget(prev);
+        lay->addWidget(next);
+        lay->addWidget(close);
+        connect(m_findEdit, &QLineEdit::textChanged, this, &TerminalWidget::findUpdate);
+        connect(m_findEdit, &QLineEdit::returnPressed, this, [this] { findStep(true); });
+        connect(prev, &QToolButton::clicked, this, [this] { findStep(false); });
+        connect(next, &QToolButton::clicked, this, [this] { findStep(true); });
+        connect(close, &QToolButton::clicked, this, [this] {
+            m_findBar->hide();
+            m_findMatches.clear();
+            m_findIndex = -1;
+            setFocus();
+            update();
+        });
+    }
+    positionFindBar();
+    m_findBar->show();
+    m_findBar->raise();
+    m_findEdit->setFocus();
+    m_findEdit->selectAll();
+    if (!m_findEdit->text().isEmpty()) findUpdate(m_findEdit->text());
+}
+
+void TerminalWidget::positionFindBar() {
+    if (!m_findBar) return;
+    m_findBar->adjustSize();
+    const int w = m_findBar->width();
+    m_findBar->move(std::max(0, width() - w - 4), 4);
+}
+
+void TerminalWidget::findUpdate(const QString& query) {
+    m_findMatches.clear();
+    m_findIndex = -1;
+    m_findLen = query.size();
+    if (!query.isEmpty()) {
+        const int lines = totalLines();
+        for (int L = 0; L < lines; ++L) {
+            const QString text = lineText(L);
+            int from = 0;
+            while (true) {
+                const int idx = text.indexOf(query, from, Qt::CaseInsensitive);
+                if (idx < 0) break;
+                m_findMatches.append(QPoint(idx, L));
+                from = idx + 1;
+            }
+        }
+    }
+    if (m_findCount) {
+        m_findCount->setText(m_findMatches.isEmpty()
+            ? (query.isEmpty() ? QString() : QStringLiteral("0/0"))
+            : QStringLiteral("1/%1").arg(m_findMatches.size()));
+    }
+    if (!m_findMatches.isEmpty()) {
+        // Jump to the last (most recent) match, like a shell scrollback search.
+        m_findIndex = m_findMatches.size() - 1;
+        findReveal(m_findIndex);
+    } else {
+        m_hasSelection = false;
+        update();
+    }
+}
+
+void TerminalWidget::findStep(bool forward) {
+    if (m_findMatches.isEmpty()) return;
+    m_findIndex = (m_findIndex + (forward ? 1 : -1) + m_findMatches.size()) % m_findMatches.size();
+    findReveal(m_findIndex);
+}
+
+void TerminalWidget::findReveal(int index) {
+    if (index < 0 || index >= m_findMatches.size()) return;
+    const QPoint m = m_findMatches[index];   // (col, absLine)
+    // Highlight the match via the selection machinery.
+    m_selAnchor = QPoint(m.x(), m.y());
+    m_selHead = QPoint(m.x() + m_findLen, m.y());
+    m_hasSelection = true;
+    // Scroll so the match line sits roughly mid-screen.
+    const int rows = m_vt.rows();
+    int offset = totalLines() - rows - m.y() + rows / 2;
+    m_scrollOffset = std::clamp(offset, 0, m_vt.scrollbackCount());
+    if (m_findCount)
+        m_findCount->setText(QStringLiteral("%1/%2").arg(index + 1).arg(m_findMatches.size()));
+    update();
+}
+
 void TerminalWidget::contextMenuEvent(QContextMenuEvent* e) {
     QMenu menu(this);
     QAction* copy = menu.addAction(QStringLiteral("Copy"));
@@ -504,6 +630,9 @@ void TerminalWidget::contextMenuEvent(QContextMenuEvent* e) {
 
     QAction* selectAllAct = menu.addAction(QStringLiteral("Select All"));
     connect(selectAllAct, &QAction::triggered, this, &TerminalWidget::selectAll);
+
+    QAction* findAct = menu.addAction(QStringLiteral("Find…"));
+    connect(findAct, &QAction::triggered, this, &TerminalWidget::showFindBar);
 
     menu.addSeparator();
     QAction* clear = menu.addAction(QStringLiteral("Clear Scrollback"));

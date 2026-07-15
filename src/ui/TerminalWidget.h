@@ -9,6 +9,8 @@
 #include <functional>
 
 class QFile;
+class QLineEdit;
+class QLabel;
 
 class QKeyEvent;
 class QMouseEvent;
@@ -62,6 +64,7 @@ public:
     void paste();
     void selectAll();        // select the whole screen + scrollback
     void clearScrollback();  // drop history and return to the live bottom
+    void showFindBar();      // open the scrollback search bar (Cmd/Ctrl+Shift+F)
 
     // Paste delay: when > 0, a multi-line paste is delivered line-by-line with
     // this many milliseconds between lines (avoids overrunning slow remotes).
@@ -88,6 +91,12 @@ protected:
 private:
     void recomputeGrid();
     void updateCellMetrics();
+    // Scrollback search.
+    QString lineText(int absLine) const;
+    void findUpdate(const QString& query);     // recompute matches for a query
+    void findStep(bool forward);               // move to next/prev match
+    void findReveal(int index);                // select + scroll match into view
+    void positionFindBar();                    // place the overlay bar
     // Mouse reporting: encode one event for the far-end app per the active mode.
     // cb is the button/motion code (before the +32 offset); col1/row1 are 1-based.
     bool reportMouseIfEnabled(QMouseEvent* e, int cbBase, bool release, bool motion);
@@ -116,6 +125,14 @@ private:
     bool m_hasSelection = false;
     int m_mouseBtn = -1;                  // button currently held for motion reports
     QPoint m_lastMouseCell{-1, -1};       // last reported (col,row) to dedupe motion
+
+    // Scrollback find bar (lazily created).
+    QWidget*   m_findBar = nullptr;
+    QLineEdit* m_findEdit = nullptr;
+    QLabel*    m_findCount = nullptr;
+    QList<QPoint> m_findMatches;          // (col, absLine) of each match start
+    int m_findLen = 0;                    // length of the current query
+    int m_findIndex = -1;                 // current match, or -1
     QPoint m_selAnchor;                   // (col, absLine)
     QPoint m_selHead;                     // (col, absLine)
 };
