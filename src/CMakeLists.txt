@@ -130,6 +130,15 @@ if(MACXTERM_BUILD_GUI)
     ui/ColorSchemeDialog.cpp
     ui/PacketCaptureDialog.cpp
   )
+  # Bundle the macOS app icon (assets/icon/macxterm.icns → *.app/Contents/Resources).
+  if(APPLE)
+    set(MACXTERM_ICNS "${CMAKE_SOURCE_DIR}/assets/icon/macxterm.icns")
+    if(EXISTS "${MACXTERM_ICNS}")
+      target_sources(macxterm PRIVATE "${MACXTERM_ICNS}")
+      set_source_files_properties("${MACXTERM_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources")
+    endif()
+  endif()
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)
   if(MACXTERM_WEBENGINE)
     target_sources(macxterm PRIVATE ui/BrowserTab.cpp)
@@ -142,5 +151,6 @@ if(MACXTERM_BUILD_GUI)
     # bridges WinMain -> main). macOS: a proper .app bundle so launching from
     # Finder does NOT spawn a Terminal window as its "console".
     WIN32_EXECUTABLE TRUE
-    MACOSX_BUNDLE TRUE)
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_ICON_FILE "macxterm.icns")
 endif()
