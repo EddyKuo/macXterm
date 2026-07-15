@@ -53,8 +53,7 @@ int vt_sb_pushline(int cols, const void* cellsv, void* user) {
         const uint32_t cp = cells[c].chars[0];
         Cell cell;
         if (cp != 0 && cp != static_cast<uint32_t>(-1))
-            cell.ch = (cp <= 0xFFFF) ? QChar(static_cast<char16_t>(cp))
-                                     : QChar(QChar::ReplacementCharacter);
+            cell.ch = cp;   // full code point; astral glyphs survive intact
         cell.bold = cells[c].attrs.bold;
         cell.reverse = cells[c].attrs.reverse;
         cell.wide = (cells[c].width == 2);
@@ -64,8 +63,8 @@ int vt_sb_pushline(int cols, const void* cellsv, void* user) {
     }
     // Heuristic soft-wrap flag: a line whose last column holds a real glyph most
     // likely continues onto the next line (used to rejoin lines on reflow).
-    const bool wrapped = cols > 0 && !line[cols - 1].ch.isNull()
-                         && line[cols - 1].ch != QChar(' ');
+    const bool wrapped = cols > 0 && line[cols - 1].ch != 0
+                         && line[cols - 1].ch != U' ';
     self->m_scrollback.push_back(line);
     self->m_sbWrapped.push_back(wrapped);
     while (self->m_scrollback.size() > self->m_scrollbackMax) {
@@ -83,9 +82,9 @@ int vt_sb_popline(int cols, void* cellsv, void* user) {
     const QVector<Cell> line = self->m_scrollback.takeLast();
     if (!self->m_sbWrapped.isEmpty()) self->m_sbWrapped.removeLast();
     for (int c = 0; c < cols; ++c) {
-        cells[c].chars[0] = (c < line.size()) ? line[c].ch.unicode() : 0;
+        cells[c].chars[0] = (c < line.size()) ? line[c].ch : 0;
         cells[c].chars[1] = 0;
-        cells[c].width = 1;
+        cells[c].width = (c < line.size() && line[c].wide) ? 2 : 1;
     }
     return 1;
 }
@@ -152,7 +151,7 @@ void VtEngine::resize(int rows, int cols) {
 // old width may merge with the next — an accepted, well-known limitation.
 void VtEngine::reflowScrollback(int newCols) {
     if (newCols <= 0 || m_scrollback.isEmpty()) return;
-    auto isBlank = [](const Cell& c) { return c.ch.isNull() || c.ch == QChar(' '); };
+    auto isBlank = [](const Cell& c) { return c.ch == 0 || c.ch == U' '; };
 
     // 1. Rejoin into logical lines.
     QList<QVector<Cell>> logical;
@@ -297,13 +296,9 @@ void VtEngine::syncFromVterm() {
             if (vterm_screen_get_cell(m_vts, pos, &vc)
                 && vc.chars[0] != 0
                 && vc.chars[0] != static_cast<uint32_t>(-1)) {
-                const uint32_t cp = vc.chars[0];
-                // ScreenBuffer holds one UTF-16 unit per cell; non-BMP code
-                // points (> 0xFFFF) can't fit — QChar(char32_t) would assert —
-                // so substitute the replacement character. Full astral-plane
-                // support would widen Cell to a QString (Phase 6).
-                cell.ch = (cp <= 0xFFFF) ? QChar(static_cast<char16_t>(cp))
-                                         : QChar(QChar::ReplacementCharacter);
+                // Cell::ch is a full code point, so astral-plane glyphs
+                // (emoji, rare CJK) are stored intact — one cell, one glyph.
+                cell.ch = vc.chars[0];
                 cell.bold = vc.attrs.bold;
                 cell.reverse = vc.attrs.reverse;
                 cell.wide = (vc.width == 2);

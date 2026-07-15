@@ -5,7 +5,7 @@ using namespace macxterm::term;
 
 static QString lineText(const QVector<Cell>& line) {
     QString s;
-    for (const Cell& c : line) s.append(c.ch);
+    for (const Cell& c : line) appendCodePoint(s, c.ch);
     while (!s.isEmpty() && s.back() == QChar(' ')) s.chop(1);
     return s;
 }

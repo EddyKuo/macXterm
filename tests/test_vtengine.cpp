@@ -31,21 +31,23 @@ private slots:
     void cursorPositioning() {
         VtEngine vt(5, 20);
         vt.input("\x1b[2;3HX");      // row 2, col 3
-        QCOMPARE(vt.screen().at(1, 2).ch, QChar('X'));
+        QCOMPARE(vt.screen().at(1, 2).ch, char32_t('X'));
     }
 
-    void nonBmpCodepointDoesNotCrash() {
-        // U+1F600 GRINNING FACE (astral plane) — must not trip QChar's
-        // BMP assertion; it is substituted with the replacement character.
+    void nonBmpCodepointPreserved() {
+        // U+1F600 GRINNING FACE (astral plane) — Cell::ch is a full code point,
+        // so it is retained intact (not folded to U+FFFD).
         VtEngine vt(3, 10);
         vt.input(QByteArray("\xF0\x9F\x98\x80"));   // UTF-8 for U+1F600
-        QCOMPARE(vt.screen().at(0, 0).ch, QChar(QChar::ReplacementCharacter));
+        QCOMPARE(vt.screen().at(0, 0).ch, char32_t(0x1F600));
+        // And it round-trips back to UTF-16 surrogates in the rendered text.
+        QCOMPARE(vt.screenText(), QString::fromUcs4(U"\U0001F600"));
     }
 
     void utf8BmpCharPreserved() {
         VtEngine vt(3, 10);
         vt.input(QByteArray("\xC3\xA9"));           // UTF-8 for U+00E9 'é'
-        QCOMPARE(vt.screen().at(0, 0).ch, QChar(0x00E9));
+        QCOMPARE(vt.screen().at(0, 0).ch, char32_t(0x00E9));
     }
 
     void resizeKeepsEngineValid() {

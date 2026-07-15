@@ -16,7 +16,7 @@ private slots:
         VtEngine vt;
         vt.input(QByteArray("\x1b[31mX"));            // SGR 31 = red (index 1)
         const Cell& c = firstCell(vt);
-        QCOMPARE(c.ch, QChar('X'));
+        QCOMPARE(c.ch, char32_t('X'));
         QCOMPARE(c.fgKind, CellColor::Ansi);
         QCOMPARE(int(c.fgIndex), 1);
     }
@@ -67,9 +67,9 @@ private slots:
         vt.input(QString::fromUtf8("星A").toUtf8());   // 星 is East-Asian wide
         const Cell& wide = vt.screen().at(0, 0);
         QVERIFY(wide.wide);                            // primary cell marked wide
-        QCOMPARE(wide.ch, QChar(0x661F));              // 星
+        QCOMPARE(wide.ch, char32_t(0x661F));              // 星
         // 'A' lands two columns over (col 1 is the skipped continuation cell).
-        QCOMPARE(vt.screen().at(0, 2).ch, QChar('A'));
+        QCOMPARE(vt.screen().at(0, 2).ch, char32_t('A'));
         QVERIFY(!vt.screen().at(0, 2).wide);
     }
 };

@@ -31,7 +31,7 @@ private slots:
         b.at(0, 0).ch = 'Z';
         b.resize(4, 4);
         QCOMPARE(b.rows(), 4);
-        QCOMPARE(b.at(0, 0).ch, QChar(' '));
+        QCOMPARE(b.at(0, 0).ch, char32_t(' '));
     }
 };
 

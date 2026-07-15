@@ -17,7 +17,7 @@ QString ScreenBuffer::rowText(int r) const {
     if (r < 0 || r >= m_rows) return {};
     QString line;
     line.reserve(m_cols);
-    for (int c = 0; c < m_cols; ++c) line.append(at(r, c).ch);
+    for (int c = 0; c < m_cols; ++c) appendCodePoint(line, at(r, c).ch);
     while (!line.isEmpty() && line.back() == QChar(' ')) line.chop(1);
     return line;
 }

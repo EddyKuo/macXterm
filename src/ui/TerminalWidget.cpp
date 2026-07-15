@@ -180,7 +180,7 @@ void TerminalWidget::paintEvent(QPaintEvent*) {
             QString lineText(cols, QChar(' '));
             for (int c = 0; c < cols; ++c) {
                 const term::Cell* cc = cellAt(absLine, c);
-                if (cc) lineText[c] = cc->ch;
+                if (cc) lineText[c] = term::cellUnit(cc->ch);
             }
             const auto spans = m_highlighter.highlight(lineText);
             if (!spans.isEmpty()) {
@@ -231,14 +231,15 @@ void TerminalWidget::paintEvent(QPaintEvent*) {
             const bool wide = cell && cell->wide;
             const int cw = wide ? 2 * m_cellW : m_cellW;
             if (cbg != bg) p.fillRect(x, y, cw, m_cellH, cbg);
-            const QChar ch = cell ? cell->ch : QChar(' ');
-            if (ch != QChar(' ')) {
+            const char32_t cp = cell ? cell->ch : U' ';
+            if (cp != U' ' && cp != 0) {
+                const QString glyph = term::codePointString(cp);
                 p.setPen(fg);
                 if (wide)
                     p.drawText(QRect(x, y, cw, m_cellH), Qt::AlignHCenter | Qt::AlignBottom,
-                               QString(ch));
+                               glyph);
                 else
-                    p.drawText(x, y + m_cellH - 3, QString(ch));
+                    p.drawText(x, y + m_cellH - 3, glyph);
             }
         }
     }
@@ -432,7 +433,8 @@ QString TerminalWidget::selectedText() const {
         QString row;
         for (int c = c0; c < c1; ++c) {
             const term::Cell* cell = cellAt(line, c);
-            row.append(cell ? cell->ch : QChar(' '));
+            if (cell) term::appendCodePoint(row, cell->ch);
+            else row.append(QChar(' '));
         }
         while (!row.isEmpty() && row.back() == QChar(' ')) row.chop(1);  // trim trailing
         text.append(row);
@@ -508,7 +510,7 @@ QString TerminalWidget::lineText(int absLine) const {
     s.reserve(cols);
     for (int c = 0; c < cols; ++c) {
         const term::Cell* cell = cellAt(absLine, c);
-        s.append((cell && !cell->ch.isNull()) ? cell->ch : QChar(' '));
+        s.append((cell && cell->ch) ? term::cellUnit(cell->ch) : QChar(' '));
     }
     return s;
 }
