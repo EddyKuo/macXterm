@@ -31,6 +31,30 @@ private slots:
         QVERIFY(back == s);
     }
 
+    void sprint31ParamsRoundTrip() {
+        // The Sprint 31 additions (per-session terminal overrides, folder, icon)
+        // ride through the generic param passthrough untouched.
+        QVariantMap f;
+        f.insert("name", "s"); f.insert("type", "SSH"); f.insert("host", "h");
+        f.insert("term.font", "JetBrains Mono");
+        f.insert("term.fontSize", "16");
+        f.insert("term.scrollback", "0");     // 0 = disabled, must survive
+        f.insert("term.backspace", "ctrl-h");
+        f.insert("folder", "Prod");
+        f.insert("icon", "⭐");
+        Session s = SessionForm::toSession(f);
+        QCOMPARE(s.param("term.font"), QStringLiteral("JetBrains Mono"));
+        QCOMPARE(s.param("term.fontSize"), QStringLiteral("16"));
+        QCOMPARE(s.param("term.scrollback"), QStringLiteral("0"));
+        QCOMPARE(s.param("term.backspace"), QStringLiteral("ctrl-h"));
+        QCOMPARE(s.param("folder"), QStringLiteral("Prod"));
+        QCOMPARE(s.param("icon"), QStringLiteral("⭐"));
+        // And back out through fromSession.
+        const QVariantMap g = SessionForm::fromSession(s);
+        QCOMPARE(g.value("folder").toString(), QStringLiteral("Prod"));
+        QCOMPARE(g.value("term.font").toString(), QStringLiteral("JetBrains Mono"));
+    }
+
     void validateRequiresName() {
         QVariantMap f; f.insert("type", "SSH"); f.insert("host", "h");
         QVERIFY(!SessionForm::validate(f).isEmpty());

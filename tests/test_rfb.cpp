@@ -198,6 +198,30 @@ private slots:
         QCOMPARE(d.pixels[3], quint32(0xFF00FF00));   // green bg elsewhere
     }
 
+    void decodeRectHextileRawTile() {
+        // 2×1 rect, single tile flagged Raw → two literal pixels (red, green).
+        Rectangle r; r.width = 2; r.height = 1; r.encoding = EncHextile;
+        QByteArray b;
+        b.append(char(0x01));   // subencoding: Raw
+        b.append(char(0x00)); b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0xFF)); // red
+        b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0x00)); b.append(char(0xFF)); // green
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(d.complete);
+        QCOMPARE(d.consumed, 1 + 2 * 4);
+        QCOMPARE(d.pixels[0], quint32(0xFFFF0000));
+        QCOMPARE(d.pixels[1], quint32(0xFF00FF00));
+    }
+
+    void decodeRectHextileIncompleteWaits() {
+        // Raw tile that promises more pixels than the buffer holds → wait.
+        Rectangle r; r.width = 4; r.height = 4; r.encoding = EncHextile;
+        QByteArray b;
+        b.append(char(0x01));   // Raw, but no pixel bytes follow
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(!d.complete);
+        QCOMPARE(d.consumed, 0);
+    }
+
     void decodeRectUnknownEncodingIncomplete() {
         Rectangle r; r.width = 1; r.height = 1; r.encoding = 999;
         QVERIFY(!decodeRect(r, QByteArray(64, '\0'), 0, 4).complete);
