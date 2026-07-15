@@ -6,6 +6,7 @@
 
 class QLineEdit;
 class QTreeWidget;
+class QProgressDialog;
 class QLabel;
 class QToolButton;
 class QPoint;
@@ -44,6 +45,7 @@ private slots:
     void onItemActivated();
     void download();
     void upload();
+    void uploadFolder();
     void showContextMenu(const QPoint& pos);
 
 private:
@@ -52,6 +54,11 @@ private:
     QString selectedName(bool* isDir = nullptr) const;
     void editRemote(const QString& remotePath);
     qint64 downloadTo(const QString& remotePath, const QString& localPath);
+    // Recursive transfer of a file or whole directory tree. Report progress and
+    // honour cancellation via the shared QProgressDialog. Return bytes or -1.
+    qint64 downloadTree(const QString& remote, const QString& local, bool isDir,
+                        QProgressDialog& prog);
+    qint64 uploadTree(const QString& local, const QString& remote, QProgressDialog& prog);
 
     // Drag-and-drop: accept OS file drops (upload) and start drags (download).
     void dragEnterEvent(QDragEnterEvent*) override;
