@@ -27,16 +27,39 @@ private slots:
         conn.disconnectSession();        // exercise terminate/cleanup
     }
 
-    void customPortAndKey() {
+    void customPortAndKeyMergeIntoOneSshArg() {
         core::Session s("m", core::SessionType::Mosh);
         s.setHost("h");
         s.setPort(2222);
         s.setParam("keyfile", "/k.pem");
         auto args = connect::MoshConnection::buildArgs(s);
-        QVERIFY(args.contains("--ssh"));
-        QVERIFY(args.join(' ').contains("ssh -i /k.pem"));
-        QVERIFY(args.join(' ').contains("ssh -p 2222"));
+        // A single --ssh whose value carries BOTH the key and the port (emitting
+        // --ssh twice used to drop the key).
+        QCOMPARE(args.count("--ssh"), 1);
+        const int i = args.indexOf("--ssh");
+        QCOMPARE(args.at(i + 1), QStringLiteral("ssh -i /k.pem -p 2222"));
         QCOMPARE(args.last(), QStringLiteral("h"));  // no username
+    }
+
+    void udpPortAndPredict() {
+        core::Session s("m", core::SessionType::Mosh);
+        s.setHost("h");
+        s.setParam("moshport", "60000:60010");
+        s.setParam("predict", "experimental");
+        auto args = connect::MoshConnection::buildArgs(s);
+        const int p = args.indexOf("-p");
+        QVERIFY(p >= 0);
+        QCOMPARE(args.at(p + 1), QStringLiteral("60000:60010"));
+        QVERIFY(args.contains("--predict=experimental"));
+    }
+
+    void noExtraArgsWhenPlain() {
+        core::Session s("m", core::SessionType::Mosh);
+        s.setHost("h");
+        auto args = connect::MoshConnection::buildArgs(s);
+        QVERIFY(!args.contains("--ssh"));     // default port + no key → no --ssh
+        QVERIFY(!args.contains("-p"));
+        QCOMPARE(args, QStringList{QStringLiteral("h")});
     }
 };
 
