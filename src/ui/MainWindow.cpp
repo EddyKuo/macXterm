@@ -768,6 +768,13 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
         openGraphicalSession(session);
         return nullptr;
     }
+    // SFTP sessions open the graphical file browser directly (over their own
+    // SSH/SFTP socket) — there is no terminal pane. Without this an SFTP session
+    // fell through to a local shell.
+    if (session.type() == core::SessionType::Sftp) {
+        showSftpFor(session);
+        return nullptr;
+    }
     TerminalWidget* term = makePane(session);
     const int idx = m_tabs->addTab(term, session.name());
     m_tabs->setCurrentIndex(idx);
