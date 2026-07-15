@@ -91,6 +91,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_rdpNla         = new QCheckBox(QStringLiteral("Network Level Authentication (NLA)"), this);
     m_rdpNla->setChecked(true);
     m_rdpIgnoreCert  = new QCheckBox(QStringLiteral("Ignore certificate warnings"), this);
+    m_vncViewOnly    = new QCheckBox(QStringLiteral("View only (don't send input)"), this);
 
     m_advForm->addRow(QString(), m_compression);
     m_advForm->addRow(QString(), m_x11);
@@ -106,6 +107,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_advForm->addRow(QString(), m_rdpAudio);
     m_advForm->addRow(QString(), m_rdpNla);
     m_advForm->addRow(QString(), m_rdpIgnoreCert);
+    m_advForm->addRow(QString(), m_vncViewOnly);
 
     // Show only the fields relevant to the selected session type.
     auto updateVisibility = [this, form, keyRow] {
@@ -118,6 +120,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         const bool gateway = key || t == core::SessionType::Rdp || t == core::SessionType::Vnc;
         const bool ssh = (t == core::SessionType::Ssh);
         const bool rdp = (t == core::SessionType::Rdp);
+        const bool vnc = (t == core::SessionType::Vnc);
         form->setRowVisible(m_password, net && t != core::SessionType::Mosh);
         form->setRowVisible(keyRow, key);
         form->setRowVisible(m_passphrase, key);
@@ -138,8 +141,9 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         m_advForm->setRowVisible(m_rdpAudio, rdp);
         m_advForm->setRowVisible(m_rdpNla, rdp);
         m_advForm->setRowVisible(m_rdpIgnoreCert, rdp);
+        m_advForm->setRowVisible(m_vncViewOnly, vnc);
         // Hide the whole group when nothing in it applies.
-        m_advanced->setVisible(ssh || rdp || gateway);
+        m_advanced->setVisible(ssh || rdp || vnc || gateway);
     };
     connect(m_type, &QComboBox::currentTextChanged, this, [updateVisibility](const QString&){ updateVisibility(); });
     updateVisibility();
@@ -207,6 +211,7 @@ void SessionDialog::setSession(const core::Session& s) {
     m_rdpAudio->setChecked(s.param("redirect_audio") == QLatin1String("1"));
     m_rdpNla->setChecked(s.param("nla", QStringLiteral("1")) != QLatin1String("0"));
     m_rdpIgnoreCert->setChecked(s.param("ignorecert") == QLatin1String("1"));
+    m_vncViewOnly->setChecked(s.param("viewonly") == QLatin1String("1"));
 }
 
 core::Session SessionDialog::session() const {
@@ -251,6 +256,9 @@ core::Session SessionDialog::session() const {
         if (m_rdpAudio->isChecked())         f.insert("redirect_audio", "1");
         if (!m_rdpNla->isChecked())          f.insert("nla", "0");
         if (m_rdpIgnoreCert->isChecked())    f.insert("ignorecert", "1");
+    }
+    if (t == core::SessionType::Vnc) {
+        if (m_vncViewOnly->isChecked())      f.insert("viewonly", "1");
     }
     return core::SessionForm::toSession(f);
 }

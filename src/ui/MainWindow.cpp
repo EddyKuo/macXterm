@@ -860,6 +860,12 @@ void MainWindow::openGraphicalSession(const core::Session& sessionIn) {
                             tile.setPixel(c, r, px[r * w + c]);
                     surface->updateRect(x, y, tile);
                 });
+        // Forward surface input to the server unless this is a view-only session.
+        const bool viewOnly = (session.param("viewonly") == "1");
+        vnc->setViewOnly(viewOnly);
+        surface->setViewOnly(viewOnly);
+        connect(surface, &RdpSurfaceWidget::pointerEvent, vnc, &connect::VncConnection::sendPointerEvent);
+        connect(surface, &RdpSurfaceWidget::keyEvent, vnc, &connect::VncConnection::sendKeyEvent);
         vnc->connectSession(resolveSecrets(session));
     } else {  // RDP
         auto* rdp = new connect::RdpConnection(surface);

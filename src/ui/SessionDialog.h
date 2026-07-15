@@ -58,6 +58,8 @@ private:
     QCheckBox* m_rdpAudio = nullptr;      // param "redirect_audio"
     QCheckBox* m_rdpNla = nullptr;        // param "nla" (default on)
     QCheckBox* m_rdpIgnoreCert = nullptr; // param "ignorecert"
+    // VNC
+    QCheckBox* m_vncViewOnly = nullptr;   // param "viewonly"
 };
 
 } // namespace macxterm::ui
