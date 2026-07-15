@@ -8,6 +8,8 @@
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QGroupBox>
+#include <QTabWidget>
+#include <QScrollArea>
 #include <QPushButton>
 #include <QFileDialog>
 #include <QDir>
@@ -78,7 +80,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(QStringLiteral("Icon"), m_icon);
 
     // --- Advanced, per-protocol options (backends already read these params) ---
-    m_advanced = new QGroupBox(QStringLiteral("Advanced"), this);
+    m_advanced = new QWidget(this);
     m_advForm = new QFormLayout(m_advanced);
     m_compression  = new QCheckBox(QStringLiteral("Enable compression"), this);
     m_x11          = new QCheckBox(QStringLiteral("X11 forwarding"), this);
@@ -134,7 +136,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_advForm->addRow(QString(), m_vncViewOnly);
 
     // --- Terminal: per-session overrides of the global appearance/behaviour ---
-    m_terminal = new QGroupBox(QStringLiteral("Terminal (override global defaults)"), this);
+    m_terminal = new QWidget(this);
     auto* termForm = new QFormLayout(m_terminal);
     m_termFont = new QLineEdit(this);
     m_termFont->setPlaceholderText(QStringLiteral("inherit global font"));
@@ -158,6 +160,23 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     termForm->addRow(QStringLiteral("Color scheme"), m_termScheme);
     termForm->addRow(QStringLiteral("Scrollback lines"), m_termScrollback);
     termForm->addRow(QStringLiteral("Backspace sends"), m_termBackspace);
+
+    // Organise the three sections into tabs so the dialog stays short instead of
+    // one tall stacked column. Each page is wrapped in a scroll area so it can
+    // never exceed the screen height on a small display.
+    auto wrapScroll = [this](QWidget* content) -> QScrollArea* {
+        auto* sa = new QScrollArea(this);
+        sa->setWidgetResizable(true);
+        sa->setFrameShape(QFrame::NoFrame);
+        sa->setWidget(content);
+        return sa;
+    };
+    auto* generalPage = new QWidget(this);
+    generalPage->setLayout(form);
+    m_tabs = new QTabWidget(this);
+    m_tabs->addTab(wrapScroll(generalPage), QStringLiteral("General"));
+    m_advTabIndex  = m_tabs->addTab(wrapScroll(m_advanced), QStringLiteral("Advanced"));
+    m_termTabIndex = m_tabs->addTab(wrapScroll(m_terminal), QStringLiteral("Terminal"));
 
     // Show only the fields relevant to the selected session type.
     auto updateVisibility = [this, form, keyRow] {
@@ -195,8 +214,8 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         m_advForm->setRowVisible(m_rdpNla, rdp);
         m_advForm->setRowVisible(m_rdpIgnoreCert, rdp);
         m_advForm->setRowVisible(m_vncViewOnly, vnc);
-        // Hide the whole group when nothing in it applies.
-        m_advanced->setVisible(ssh || rdp || vnc || gateway);
+        // Hide the whole Advanced tab when nothing in it applies.
+        m_tabs->setTabVisible(m_advTabIndex, ssh || rdp || vnc || gateway);
 
         // Terminal overrides only apply to session types that host a terminal
         // pane (not the pure remote-desktop / file-transfer protocols).
@@ -204,7 +223,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
                                    t == core::SessionType::Serial || t == core::SessionType::Mosh ||
                                    t == core::SessionType::Rsh || t == core::SessionType::Rlogin ||
                                    t == core::SessionType::Shell);
-        m_terminal->setVisible(terminalPane);
+        m_tabs->setTabVisible(m_termTabIndex, terminalPane);
     };
     connect(m_type, &QComboBox::currentTextChanged, this, [updateVisibility](const QString&){ updateVisibility(); });
     updateVisibility();
@@ -214,10 +233,11 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     auto* layout = new QVBoxLayout(this);
-    layout->addLayout(form);
-    layout->addWidget(m_advanced);
-    layout->addWidget(m_terminal);
+    layout->addWidget(m_tabs);
     layout->addWidget(buttons);
+    // Compact default; the scroll areas keep it within the screen if a tab is
+    // taller than this on a small display.
+    resize(460, 440);
 }
 
 void SessionDialog::setKnownFolders(const QStringList& folders) {

@@ -8,6 +8,7 @@ class QSpinBox;
 class QCheckBox;
 class QFormLayout;
 class QGroupBox;
+class QTabWidget;
 
 namespace macxterm::ui {
 
@@ -45,8 +46,13 @@ private:
     QComboBox* m_folder = nullptr;    // param "folder" (bookmark folder; editable)
     QComboBox* m_icon = nullptr;      // param "icon" (emoji shown in the tree)
 
+    // Tabbed layout: General / Advanced / Terminal, so the dialog stays compact.
+    QTabWidget* m_tabs = nullptr;
+    int m_advTabIndex = -1;
+    int m_termTabIndex = -1;
+
     // Advanced, per-protocol options (map to Session params the backends read).
-    QGroupBox*  m_advanced = nullptr;
+    QWidget*    m_advanced = nullptr;   // the Advanced tab page
     QFormLayout* m_advForm = nullptr;
     // SSH
     QCheckBox* m_compression = nullptr;   // param "compression"
@@ -73,7 +79,7 @@ private:
     // Terminal, per-session overrides of the global appearance/behaviour
     // (params "term.font"/"term.fontSize"/"term.scheme"/"term.scrollback"/
     // "term.backspace"; blank/sentinel = inherit the global Settings).
-    QGroupBox*  m_terminal = nullptr;
+    QWidget*    m_terminal = nullptr;   // the Terminal tab page
     QLineEdit*  m_termFont = nullptr;
     QSpinBox*   m_termFontSize = nullptr;   // 0 = inherit
     QComboBox*  m_termScheme = nullptr;     // "" = inherit
