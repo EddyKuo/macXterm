@@ -1,5 +1,6 @@
 #include "connect/RfbProtocol.h"
 #include <algorithm>
+#include <zlib.h>
 
 namespace macxterm::connect::rfb {
 
@@ -239,6 +240,161 @@ QByteArray encodeKeyEvent(quint32 keysym, bool down) {
     msg.append(char((keysym >> 8) & 0xff));
     msg.append(char(keysym & 0xff));
     return msg;
+}
+
+// ── ZRLE (RFB 7.7.5): zlib-compressed 64×64 tiles ──
+
+struct RfbZlibStream::Impl {
+    z_stream zs {};
+    bool inited = false;
+};
+
+RfbZlibStream::RfbZlibStream() : d(new Impl) {
+    if (inflateInit(&d->zs) != Z_OK) m_failed = true;
+    else d->inited = true;
+}
+
+RfbZlibStream::~RfbZlibStream() {
+    if (d->inited) inflateEnd(&d->zs);
+    delete d;
+}
+
+QByteArray RfbZlibStream::inflate(const QByteArray& compressed) {
+    if (m_failed || compressed.isEmpty()) return {};
+    d->zs.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(compressed.constData()));
+    d->zs.avail_in = static_cast<uInt>(compressed.size());
+    QByteArray out;
+    char buf[16384];
+    // The sender flushes (Z_SYNC_FLUSH) at each rectangle boundary, so draining
+    // until avail_in hits 0 yields exactly this rectangle's tile bytes.
+    while (d->zs.avail_in > 0) {
+        d->zs.next_out = reinterpret_cast<Bytef*>(buf);
+        d->zs.avail_out = sizeof(buf);
+        const int rc = ::inflate(&d->zs, Z_SYNC_FLUSH);
+        if (rc != Z_OK && rc != Z_STREAM_END && rc != Z_BUF_ERROR) { m_failed = true; return out; }
+        out.append(buf, static_cast<int>(sizeof(buf) - d->zs.avail_out));
+        if (rc == Z_BUF_ERROR) break;   // no forward progress possible
+        if (rc == Z_STREAM_END) break;
+    }
+    return out;
+}
+
+namespace {
+// A bounds-checked cursor over inflated ZRLE tile data. `bad` latches on overrun
+// so a malformed stream fails cleanly instead of reading past the buffer.
+struct TileReader {
+    const QByteArray& b;
+    int p = 0;
+    bool bad = false;
+    explicit TileReader(const QByteArray& buf) : b(buf) {}
+
+    quint8 u8() {
+        if (p + 1 > b.size()) { bad = true; return 0; }
+        return static_cast<quint8>(b[p++]);
+    }
+    // CPIXEL for 32bpp/depth-24: 3 bytes = blue, green, red (low 3 bytes).
+    quint32 cpixel() {
+        if (p + 3 > b.size()) { bad = true; return 0xFF000000u; }
+        const quint8 blue = static_cast<quint8>(b[p]);
+        const quint8 green = static_cast<quint8>(b[p + 1]);
+        const quint8 red = static_cast<quint8>(b[p + 2]);
+        p += 3;
+        return 0xFF000000u | (red << 16) | (green << 8) | blue;
+    }
+    // ZRLE run length: 1 + sum of bytes, reading 255s until a byte < 255.
+    int runLength() {
+        int sum = 0; quint8 c;
+        do { c = u8(); sum += c; } while (c == 255 && !bad);
+        return sum + 1;
+    }
+};
+}  // namespace
+
+RectData decodeZRLERect(RfbZlibStream& z, const Rectangle& r,
+                        const QByteArray& buf, int off, int /*bpp*/) {
+    RectData out;
+    if (buf.size() < off + 4) return out;
+    const quint32 len = (static_cast<quint32>(static_cast<quint8>(buf[off])) << 24)
+                      | (static_cast<quint32>(static_cast<quint8>(buf[off + 1])) << 16)
+                      | (static_cast<quint32>(static_cast<quint8>(buf[off + 2])) << 8)
+                      |  static_cast<quint32>(static_cast<quint8>(buf[off + 3]));
+    if (buf.size() < off + 4 + static_cast<int>(len)) return out;   // wait for more
+
+    const QByteArray tiles = z.inflate(buf.mid(off + 4, static_cast<int>(len)));
+    if (z.failed()) { out.consumed = 4 + int(len); out.complete = true; return out; }  // skip cleanly
+
+    const int w = int(r.width), h = int(r.height);
+    out.pixels = QList<quint32>(w * h, 0xFF000000u);
+    TileReader tr(tiles);
+
+    for (int ty = 0; ty < h && !tr.bad; ty += 64) {
+        const int th = std::min(64, h - ty);
+        for (int tx = 0; tx < w && !tr.bad; tx += 64) {
+            const int tw = std::min(64, w - tx);
+            auto put = [&](int lx, int ly, quint32 c) {
+                const int px = tx + lx, py = ty + ly;
+                if (px < w && py < h) out.pixels[py * w + px] = c;
+            };
+            const quint8 sub = tr.u8();
+
+            if (sub == 0) {                       // raw
+                for (int y = 0; y < th; ++y)
+                    for (int x = 0; x < tw; ++x) put(x, y, tr.cpixel());
+            } else if (sub == 1) {                // solid colour
+                const quint32 c = tr.cpixel();
+                for (int y = 0; y < th; ++y)
+                    for (int x = 0; x < tw; ++x) put(x, y, c);
+            } else if (sub >= 2 && sub <= 16) {   // packed palette
+                const int palSize = sub;
+                QList<quint32> pal(palSize);
+                for (int i = 0; i < palSize; ++i) pal[i] = tr.cpixel();
+                const int bpp = palSize <= 2 ? 1 : (palSize <= 4 ? 2 : 4);
+                const quint32 mask = (1u << bpp) - 1;
+                for (int y = 0; y < th && !tr.bad; ++y) {
+                    int bit = 0; quint8 cur = 0;
+                    for (int x = 0; x < tw; ++x) {
+                        if (bit == 0) { cur = tr.u8(); bit = 8; }
+                        bit -= bpp;
+                        const quint32 idx = (cur >> bit) & mask;
+                        put(x, y, idx < static_cast<quint32>(palSize) ? pal[idx] : 0xFF000000u);
+                    }
+                    // rows are padded to a byte boundary (bit resets next row)
+                }
+            } else if (sub == 128) {              // plain RLE
+                int x = 0, y = 0;
+                while (y < th && !tr.bad) {
+                    const quint32 c = tr.cpixel();
+                    int run = tr.runLength();
+                    while (run-- > 0 && y < th) {
+                        put(x, y, c);
+                        if (++x >= tw) { x = 0; ++y; }
+                    }
+                }
+            } else if (sub >= 130) {              // palette RLE
+                const int palSize = sub - 128;
+                QList<quint32> pal(palSize);
+                for (int i = 0; i < palSize; ++i) pal[i] = tr.cpixel();
+                int x = 0, y = 0;
+                while (y < th && !tr.bad) {
+                    const quint8 idxByte = tr.u8();
+                    const quint32 idx = idxByte & 0x7f;
+                    int run = (idxByte & 0x80) ? tr.runLength() : 1;
+                    const quint32 c = idx < static_cast<quint32>(palSize) ? pal[idx] : 0xFF000000u;
+                    while (run-- > 0 && y < th) {
+                        put(x, y, c);
+                        if (++x >= tw) { x = 0; ++y; }
+                    }
+                }
+            } else {
+                tr.bad = true;                    // unused subencoding (17-127, 129)
+            }
+        }
+    }
+
+    if (tr.bad) { out.pixels.clear(); }           // malformed → drop, but consume
+    out.consumed = 4 + int(len);
+    out.complete = true;
+    return out;
 }
 
 } // namespace macxterm::connect::rfb

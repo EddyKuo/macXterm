@@ -53,7 +53,7 @@ QList<quint32> decodeRawRect(const Rectangle& r, const QByteArray& pixelData,
                              int bytesPerPixel = 4);
 
 // RFB rectangle encoding numbers we decode.
-enum Encoding : qint32 { EncRaw = 0, EncCopyRect = 1, EncRRE = 2, EncHextile = 5 };
+enum Encoding : qint32 { EncRaw = 0, EncCopyRect = 1, EncRRE = 2, EncHextile = 5, EncZRLE = 16 };
 
 // Result of decoding one rectangle's payload out of a byte stream.
 struct RectData {
@@ -74,6 +74,36 @@ RectData decodeRect(const Rectangle& r, const QByteArray& buf, int off, int bpp 
 // Encode a SetEncodings client message (type 2) advertising `encodings` in
 // preference order (most-preferred first).
 QByteArray encodeSetEncodings(const QList<qint32>& encodings);
+
+// Persistent zlib inflate stream for ZRLE (RFB 7.7.5). One instance per VNC
+// connection: the compressed framebuffer stream is CONTINUOUS across every ZRLE
+// rectangle, so the inflate context must survive between decodeZRLERect calls —
+// resetting it per-rectangle corrupts the stream.
+class RfbZlibStream {
+public:
+    RfbZlibStream();
+    ~RfbZlibStream();
+    RfbZlibStream(const RfbZlibStream&) = delete;
+    RfbZlibStream& operator=(const RfbZlibStream&) = delete;
+    // Inflate `compressed` and return every output byte it produced. Sets
+    // failed() on a zlib error; state carries over between calls.
+    QByteArray inflate(const QByteArray& compressed);
+    bool failed() const { return m_failed; }
+private:
+    struct Impl;
+    Impl* d;
+    bool m_failed = false;
+};
+
+// Decode one ZRLE-encoded rectangle. `z` is the connection's persistent inflate
+// stream (state carries across rectangles). The rectangle payload is a CARD32
+// length then that many zlib-compressed bytes; inflated it holds 64×64 tiles,
+// each with its own subencoding (raw / solid / packed-palette / plain-RLE /
+// palette-RLE). Returns complete=false (consumed=0) if the buffer lacks the
+// whole compressed block. `bpp` is the server bytes-per-pixel (a 32bpp/depth-24
+// pixel uses a 3-byte CPIXEL). Pure w.r.t. `buf`; mutates only `z`.
+RectData decodeZRLERect(RfbZlibStream& z, const Rectangle& r,
+                        const QByteArray& buf, int off, int bpp = 4);
 
 // Encode an RFB PointerEvent (client message-type 5): button-mask byte then the
 // x,y position as big-endian uint16 (negatives clamped to 0). buttonMask: bit0

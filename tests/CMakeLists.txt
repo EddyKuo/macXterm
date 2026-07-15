@@ -19,6 +19,7 @@ set(MACXTERM_TESTS
   test_remotepath
   test_cli
   test_rfb
+  test_rfb_zrle
   test_monitor
   test_tftp
   test_mosh

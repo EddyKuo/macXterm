@@ -50,6 +50,7 @@ private:
     Phase m_phase = Phase::Version;
     QByteArray m_buf;
     rfb::ServerInit m_serverInit;
+    rfb::RfbZlibStream m_zlib;   // persistent inflate state for ZRLE rectangles
     bool m_viewOnly = false;
     int m_buttonMask = 0;   // last pointer button state (for key-with-buttons)
 };

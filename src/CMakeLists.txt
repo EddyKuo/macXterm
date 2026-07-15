@@ -82,6 +82,7 @@ target_link_libraries(macxterm_core PUBLIC
   OpenSSL::Crypto
   ${VTERM_LIB}
   ${SSH2_LIB}
+  ZLIB::ZLIB
 )
 
 if(MACXTERM_FREERDP)

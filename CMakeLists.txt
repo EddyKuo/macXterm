@@ -83,6 +83,9 @@ find_path(VTERM_INCLUDE vterm.h REQUIRED HINTS /opt/homebrew/opt/libvterm/includ
 find_library(SSH2_LIB ssh2 REQUIRED HINTS /opt/homebrew/opt/libssh2/lib)
 find_path(SSH2_INCLUDE libssh2.h REQUIRED HINTS /opt/homebrew/opt/libssh2/include)
 
+# zlib (permissive) — RFB ZRLE decoding uses inflate over the framebuffer stream.
+find_package(ZLIB REQUIRED)
+
 # FreeRDP (Apache-2.0, optional) — real RDP protocol integration when present.
 find_library(FREERDP3_LIB freerdp3 HINTS /opt/homebrew/opt/freerdp/lib)
 find_library(FREERDP_CLIENT3_LIB freerdp-client3 HINTS /opt/homebrew/opt/freerdp/lib)

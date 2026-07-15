@@ -77,7 +77,7 @@ void VncConnection::onReadyRead() {
         // Advertise the encodings we can decode (preference order); the server
         // then compresses rectangles instead of only sending RAW.
         m_sock->write(rfb::encodeSetEncodings(
-            {rfb::EncHextile, rfb::EncRRE, rfb::EncCopyRect, rfb::EncRaw}));
+            {rfb::EncZRLE, rfb::EncHextile, rfb::EncRRE, rfb::EncCopyRect, rfb::EncRaw}));
         requestFramebuffer();
         m_phase = Phase::Running;
     }
@@ -93,7 +93,9 @@ void VncConnection::onReadyRead() {
             bool complete = true;
             for (const rfb::Rectangle& r : hdr.rects) {
                 off += 12;   // step over this rect's header (already parsed)
-                const rfb::RectData d = rfb::decodeRect(r, m_buf, off, 4);
+                const rfb::RectData d = (r.encoding == rfb::EncZRLE)
+                    ? rfb::decodeZRLERect(m_zlib, r, m_buf, off, 4)
+                    : rfb::decodeRect(r, m_buf, off, 4);
                 if (!d.complete) { complete = false; break; }
                 if (d.isCopy)
                     emit copyRect(d.srcX, d.srcY, r.x, r.y, r.width, r.height);
