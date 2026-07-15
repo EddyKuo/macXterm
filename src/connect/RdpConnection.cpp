@@ -113,11 +113,12 @@ qint64 RdpConnection::send(const QByteArray&) {
     return -1;   // RDP input is injected into the FreeRDP surface, not this stream
 }
 
-#ifdef MACXTERM_HAVE_FREERDP
 // Map an X11 keysym (as emitted by the surface widget) to an RDP set-1 scancode
-// for the non-printable keys. Returns 0 when the key should be sent as Unicode.
-static UINT16 keysymToRdpScancode(quint32 keysym, bool* extended) {
+// for the non-printable keys. Returns 0 when the key should be sent as Unicode
+// (or when built without FreeRDP).
+int RdpConnection::keysymToRdpScancode(quint32 keysym, bool* extended) {
     *extended = false;
+#ifdef MACXTERM_HAVE_FREERDP
     switch (keysym) {
         case 0xff08: return RDP_SCANCODE_BACKSPACE;
         case 0xff09: return RDP_SCANCODE_TAB;
@@ -138,8 +139,11 @@ static UINT16 keysymToRdpScancode(quint32 keysym, bool* extended) {
         case 0xffe9: return RDP_SCANCODE_LMENU;
         default: return 0;
     }
-}
+#else
+    (void)keysym;
+    return 0;
 #endif
+}
 
 void RdpConnection::sendPointerEvent(int x, int y, int buttonMask) {
 #ifdef MACXTERM_HAVE_FREERDP

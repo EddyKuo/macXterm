@@ -40,6 +40,12 @@ public:
     void sendPointerEvent(int x, int y, int buttonMask);
     void sendKeyEvent(quint32 keysym, bool down);
 
+    // Map an X11 keysym to an RDP set-1 scancode for non-printable keys (0 means
+    // "send as Unicode instead"); *extended is set for keys needing the RDP
+    // extended flag (arrows, nav cluster). Exposed for unit testing; returns 0
+    // when built without FreeRDP.
+    static int keysymToRdpScancode(quint32 keysym, bool* extended);
+
 private:
     rdp_freerdp* m_instance = nullptr;   // only used when built with FreeRDP
     int m_prevButtonMask = 0;            // for mouse button transition detection
