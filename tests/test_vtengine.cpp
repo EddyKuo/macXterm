@@ -105,6 +105,21 @@ private slots:
         QCOMPARE(static_cast<unsigned char>(rel[3]), static_cast<unsigned char>(32 + 3));
     }
 
+    void findMatchesAcrossLines() {
+        const QStringList lines = {
+            QStringLiteral("error: first"),
+            QStringLiteral("all good"),
+            QStringLiteral("ERROR again, error twice"),
+        };
+        const QList<QPoint> hits = findMatches(lines, QStringLiteral("error"));
+        QCOMPARE(hits.size(), 3);                 // case-insensitive
+        QCOMPARE(hits[0], QPoint(0, 0));          // line 0, col 0
+        QCOMPARE(hits[1], QPoint(0, 2));          // line 2, "ERROR"
+        QCOMPARE(hits[2], QPoint(13, 2));         // line 2, "error" second occurrence
+        QVERIFY(findMatches(lines, QString()).isEmpty());   // empty query → none
+        QVERIFY(findMatches(lines, QStringLiteral("zzz")).isEmpty());
+    }
+
     void urlDetection() {
         const QString line = QStringLiteral("see https://example.com/x for docs");
         const int hit = line.indexOf(QStringLiteral("example"));

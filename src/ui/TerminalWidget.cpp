@@ -564,22 +564,13 @@ void TerminalWidget::positionFindBar() {
 }
 
 void TerminalWidget::findUpdate(const QString& query) {
-    m_findMatches.clear();
     m_findIndex = -1;
     m_findLen = query.size();
-    if (!query.isEmpty()) {
-        const int lines = totalLines();
-        for (int L = 0; L < lines; ++L) {
-            const QString text = lineText(L);
-            int from = 0;
-            while (true) {
-                const int idx = text.indexOf(query, from, Qt::CaseInsensitive);
-                if (idx < 0) break;
-                m_findMatches.append(QPoint(idx, L));
-                from = idx + 1;
-            }
-        }
-    }
+    QStringList lines;
+    const int total = totalLines();
+    lines.reserve(total);
+    for (int L = 0; L < total; ++L) lines.append(lineText(L));
+    m_findMatches = term::findMatches(lines, query);   // (col, absLine) per match
     if (m_findCount) {
         m_findCount->setText(m_findMatches.isEmpty()
             ? (query.isEmpty() ? QString() : QStringLiteral("0/0"))

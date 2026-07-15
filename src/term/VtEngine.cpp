@@ -334,6 +334,22 @@ QByteArray VtEngine::encodeMouseReport(MouseEncoding enc, int cb, int col1, int 
     return out;
 }
 
+QList<QPoint> findMatches(const QStringList& lines, const QString& query) {
+    QList<QPoint> out;
+    if (query.isEmpty()) return out;
+    for (int L = 0; L < lines.size(); ++L) {
+        const QString& text = lines[L];
+        int from = 0;
+        while (true) {
+            const int idx = text.indexOf(query, from, Qt::CaseInsensitive);
+            if (idx < 0) break;
+            out.append(QPoint(idx, L));
+            from = idx + 1;
+        }
+    }
+    return out;
+}
+
 QString detectUrlAt(const QString& line, int col) {
     static const QRegularExpression re(
         QStringLiteral("(https?://|ftp://|file://|www\\.)[^\\s\"'<>()]+"),

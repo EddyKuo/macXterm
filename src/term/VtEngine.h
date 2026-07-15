@@ -4,6 +4,8 @@
 #include <QByteArray>
 #include <QList>
 #include <QVector>
+#include <QPoint>
+#include <QStringList>
 
 struct VTerm;
 struct VTermScreen;
@@ -105,5 +107,9 @@ private:
 // http(s)/ftp/file URLs and bare "www." hosts, trims trailing sentence
 // punctuation, and prepends https:// to bare www. hosts. Empty if none.
 QString detectUrlAt(const QString& line, int col);
+
+// Case-insensitive scrollback search: return every occurrence of `query` across
+// `lines` as (column, line-index) points, in reading order. Empty query → none.
+QList<QPoint> findMatches(const QStringList& lines, const QString& query);
 
 } // namespace macxterm::term
