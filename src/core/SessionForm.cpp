@@ -38,6 +38,36 @@ QVariantMap SessionForm::fromSession(const Session& s) {
     return f;
 }
 
+void SessionForm::applyAdvanced(QVariantMap& f, SessionType type, bool hasGateway,
+                                const AdvancedOptions& o) {
+    if (type == SessionType::Ssh) {
+        if (o.compression)   f.insert("compression", "1");
+        if (!o.x11)          f.insert("x11", "0");
+        if (o.agent)         f.insert("agent", "1");
+        if (o.agentForward)  f.insert("agentforward", "1");
+    }
+    if (hasGateway) {
+        if (!o.gatewayUser.isEmpty())       f.insert("gateway_user", o.gatewayUser);
+        if (!o.gatewayPassword.isEmpty())   f.insert("gateway_password", o.gatewayPassword);
+        if (!o.gatewayPassphrase.isEmpty()) f.insert("gateway_passphrase", o.gatewayPassphrase);
+    }
+    if (type == SessionType::Rdp) {
+        if (!o.domain.isEmpty())      f.insert("domain", o.domain);
+        if (o.rdpWidth > 0 && o.rdpHeight > 0) {
+            f.insert("width", QString::number(o.rdpWidth));
+            f.insert("height", QString::number(o.rdpHeight));
+        }
+        if (!o.rdpClipboard)  f.insert("redirect_clipboard", "0");
+        if (o.rdpDrives)      f.insert("redirect_drives", "1");
+        if (o.rdpAudio)       f.insert("redirect_audio", "1");
+        if (!o.rdpNla)        f.insert("nla", "0");
+        if (o.rdpIgnoreCert)  f.insert("ignorecert", "1");
+    }
+    if (type == SessionType::Vnc) {
+        if (o.vncViewOnly)    f.insert("viewonly", "1");
+    }
+}
+
 QString SessionForm::validate(const QVariantMap& f) {
     if (f.value("name").toString().trimmed().isEmpty())
         return QStringLiteral("Session name is required");

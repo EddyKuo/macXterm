@@ -226,40 +226,31 @@ core::Session SessionDialog::session() const {
     if (!m_passphrase->text().isEmpty()) f.insert("passphrase", m_passphrase->text());
     if (!m_gateway->text().isEmpty())    f.insert("gateway", m_gateway->text());
 
-    // Advanced options, written only for the protocols they apply to so saved
-    // sessions stay minimal. Default-off flags emit "1" only when enabled;
-    // default-on flags emit "0" only when disabled (absent → backend default).
+    // Advanced options: collect the widget state into a plain struct and let the
+    // (unit-tested) SessionForm decide which params to serialize per type.
     const core::SessionType t = core::sessionTypeFromString(m_type->currentText());
-    const bool gateway = !m_gateway->text().isEmpty();
-    if (t == core::SessionType::Ssh) {
-        if (m_compression->isChecked())   f.insert("compression", "1");
-        if (!m_x11->isChecked())          f.insert("x11", "0");
-        if (m_agent->isChecked())         f.insert("agent", "1");
-        if (m_agentForward->isChecked())  f.insert("agentforward", "1");
+    core::SessionForm::AdvancedOptions o;
+    o.compression   = m_compression->isChecked();
+    o.x11           = m_x11->isChecked();
+    o.agent         = m_agent->isChecked();
+    o.agentForward  = m_agentForward->isChecked();
+    o.gatewayUser       = m_gwUser->text();
+    o.gatewayPassword   = m_gwPassword->text();
+    o.gatewayPassphrase = m_gwPassphrase->text();
+    o.domain        = m_domain->text();
+    // Resolution "W×H" → width/height; "Default" leaves them 0.
+    const QString res = m_rdpResolution->currentText();
+    if (const int cross = res.indexOf(QChar(0x00D7)); cross > 0) {
+        o.rdpWidth  = res.left(cross).toInt();
+        o.rdpHeight = res.mid(cross + 1).toInt();
     }
-    if (gateway) {
-        if (!m_gwUser->text().isEmpty())       f.insert("gateway_user", m_gwUser->text());
-        if (!m_gwPassword->text().isEmpty())   f.insert("gateway_password", m_gwPassword->text());
-        if (!m_gwPassphrase->text().isEmpty()) f.insert("gateway_passphrase", m_gwPassphrase->text());
-    }
-    if (t == core::SessionType::Rdp) {
-        if (!m_domain->text().isEmpty())     f.insert("domain", m_domain->text());
-        // Resolution "W×H" → width/height params; "Default" leaves them unset.
-        const QString res = m_rdpResolution->currentText();
-        const int cross = res.indexOf(QChar(0x00D7));   // ×
-        if (cross > 0) {
-            f.insert("width", res.left(cross));
-            f.insert("height", res.mid(cross + 1));
-        }
-        if (!m_rdpClipboard->isChecked())    f.insert("redirect_clipboard", "0");
-        if (m_rdpDrives->isChecked())        f.insert("redirect_drives", "1");
-        if (m_rdpAudio->isChecked())         f.insert("redirect_audio", "1");
-        if (!m_rdpNla->isChecked())          f.insert("nla", "0");
-        if (m_rdpIgnoreCert->isChecked())    f.insert("ignorecert", "1");
-    }
-    if (t == core::SessionType::Vnc) {
-        if (m_vncViewOnly->isChecked())      f.insert("viewonly", "1");
-    }
+    o.rdpClipboard  = m_rdpClipboard->isChecked();
+    o.rdpDrives     = m_rdpDrives->isChecked();
+    o.rdpAudio      = m_rdpAudio->isChecked();
+    o.rdpNla        = m_rdpNla->isChecked();
+    o.rdpIgnoreCert = m_rdpIgnoreCert->isChecked();
+    o.vncViewOnly   = m_vncViewOnly->isChecked();
+    core::SessionForm::applyAdvanced(f, t, /*hasGateway=*/!m_gateway->text().isEmpty(), o);
     return core::SessionForm::toSession(f);
 }
 
