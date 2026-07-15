@@ -2,6 +2,8 @@
 #include <vterm.h>
 #include <QUrl>
 #include <QString>
+#include <QRegularExpression>
+#include <algorithm>
 
 namespace macxterm::term {
 
@@ -312,6 +314,43 @@ void VtEngine::syncFromVterm() {
         }
     }
     emit screenUpdated();
+}
+
+QByteArray VtEngine::encodeMouseReport(MouseEncoding enc, int cb, int col1, int row1, bool release) {
+    QByteArray out;
+    if (enc == MouseEncoding::Sgr) {
+        out = "\x1b[<" + QByteArray::number(cb) + ';'
+              + QByteArray::number(col1) + ';' + QByteArray::number(row1)
+              + (release ? 'm' : 'M');
+    } else {
+        // Legacy X10 encoding: bytes are offset by 32; release uses button 3.
+        const int b = release ? (cb | 3) : cb;
+        auto clampByte = [](int v) { return static_cast<char>(std::clamp(v, 0, 223) + 32); };
+        out = "\x1b[M";
+        out += static_cast<char>(std::clamp(b, 0, 223) + 32);
+        out += clampByte(col1);
+        out += clampByte(row1);
+    }
+    return out;
+}
+
+QString detectUrlAt(const QString& line, int col) {
+    static const QRegularExpression re(
+        QStringLiteral("(https?://|ftp://|file://|www\\.)[^\\s\"'<>()]+"),
+        QRegularExpression::CaseInsensitiveOption);
+    auto it = re.globalMatch(line);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        if (col >= m.capturedStart() && col < m.capturedEnd()) {
+            QString url = m.captured();
+            while (!url.isEmpty() && QStringLiteral(".,;:!?").contains(url.back()))
+                url.chop(1);
+            if (url.startsWith(QStringLiteral("www."), Qt::CaseInsensitive))
+                url.prepend(QStringLiteral("https://"));
+            return url;
+        }
+    }
+    return {};
 }
 
 } // namespace macxterm::term

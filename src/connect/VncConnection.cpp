@@ -115,26 +115,12 @@ qint64 VncConnection::send(const QByteArray&) {
 void VncConnection::sendPointerEvent(int x, int y, int buttonMask) {
     if (m_viewOnly || m_phase != Phase::Running || !m_sock) return;
     m_buttonMask = buttonMask;
-    QByteArray msg;
-    msg.append(char(5));                         // PointerEvent
-    msg.append(char(buttonMask & 0xff));
-    auto p16 = [&](int v){ msg.append(char((v >> 8) & 0xff)); msg.append(char(v & 0xff)); };
-    p16(std::max(0, x));
-    p16(std::max(0, y));
-    m_sock->write(msg);
+    m_sock->write(rfb::encodePointerEvent(x, y, buttonMask));
 }
 
 void VncConnection::sendKeyEvent(quint32 keysym, bool down) {
     if (m_viewOnly || m_phase != Phase::Running || !m_sock) return;
-    QByteArray msg;
-    msg.append(char(4));                         // KeyEvent
-    msg.append(char(down ? 1 : 0));
-    msg.append(char(0)); msg.append(char(0));    // padding
-    msg.append(char((keysym >> 24) & 0xff));
-    msg.append(char((keysym >> 16) & 0xff));
-    msg.append(char((keysym >> 8) & 0xff));
-    msg.append(char(keysym & 0xff));
-    m_sock->write(msg);
+    m_sock->write(rfb::encodeKeyEvent(keysym, down));
 }
 
 void VncConnection::disconnectSession() {

@@ -311,21 +311,7 @@ QPoint TerminalWidget::cellForPos(const QPoint& pt) const {
 // Encode and transmit one mouse event to the far end using the active mouse
 // encoding (default X10-style or SGR 1006). col1/row1 are 1-based.
 void TerminalWidget::sendMouseReport(int cb, int col1, int row1, bool release) {
-    QByteArray out;
-    if (m_vt.mouseEncoding() == term::VtEngine::MouseEncoding::Sgr) {
-        out = "\x1b[<" + QByteArray::number(cb) + ';'
-              + QByteArray::number(col1) + ';' + QByteArray::number(row1)
-              + (release ? 'm' : 'M');
-    } else {
-        // Legacy X10 encoding: bytes are offset by 32; release uses button 3.
-        const int b = release ? (cb | 3) : cb;
-        auto clampByte = [](int v) { return static_cast<char>(std::clamp(v, 0, 223) + 32); };
-        out = "\x1b[M";
-        out += static_cast<char>(std::clamp(b, 0, 223) + 32);
-        out += clampByte(col1);
-        out += clampByte(row1);
-    }
-    sendInput(out);
+    sendInput(term::VtEngine::encodeMouseReport(m_vt.mouseEncoding(), cb, col1, row1, release));
 }
 
 // Map a widget position to a 1-based (col,row) within the visible screen and,
@@ -528,25 +514,7 @@ QString TerminalWidget::lineText(int absLine) const {
 }
 
 QString TerminalWidget::urlAt(int absLine, int col) const {
-    const QString text = lineText(absLine);
-    // Match http(s)/ftp/file URLs and bare www. hosts.
-    static const QRegularExpression re(
-        QStringLiteral("(https?://|ftp://|file://|www\\.)[^\\s\"'<>()]+"),
-        QRegularExpression::CaseInsensitiveOption);
-    auto it = re.globalMatch(text);
-    while (it.hasNext()) {
-        const QRegularExpressionMatch m = it.next();
-        if (col >= m.capturedStart() && col < m.capturedEnd()) {
-            QString url = m.captured();
-            // Drop trailing sentence punctuation that isn't part of the link.
-            while (!url.isEmpty() && QStringLiteral(".,;:!?").contains(url.back()))
-                url.chop(1);
-            if (url.startsWith(QStringLiteral("www."), Qt::CaseInsensitive))
-                url.prepend(QStringLiteral("https://"));
-            return url;
-        }
-    }
-    return {};
+    return term::detectUrlAt(lineText(absLine), col);
 }
 
 void TerminalWidget::showFindBar() {

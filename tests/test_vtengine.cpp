@@ -82,6 +82,40 @@ private slots:
         QCOMPARE(vt.scrollbackCount(), 0);
     }
 
+    void mouseReportSgrEncoding() {
+        // Left press at col 5, row 3 (1-based), SGR: ESC[<0;5;3M
+        const QByteArray m = VtEngine::encodeMouseReport(
+            VtEngine::MouseEncoding::Sgr, /*cb=*/0, 5, 3, /*release=*/false);
+        QCOMPARE(m, QByteArray("\x1b[<0;5;3M"));
+        // Release flips the final byte to 'm'.
+        const QByteArray up = VtEngine::encodeMouseReport(
+            VtEngine::MouseEncoding::Sgr, 0, 5, 3, true);
+        QCOMPARE(up, QByteArray("\x1b[<0;5;3m"));
+    }
+
+    void mouseReportX10Encoding() {
+        // Legacy X10: ESC[M then (32+cb)(32+col)(32+row). Release uses button 3.
+        const QByteArray m = VtEngine::encodeMouseReport(
+            VtEngine::MouseEncoding::Default, /*cb=*/0, 1, 1, /*release=*/false);
+        QByteArray want("\x1b[M");
+        want += char(32 + 0); want += char(32 + 1); want += char(32 + 1);
+        QCOMPARE(m, want);
+        const QByteArray rel = VtEngine::encodeMouseReport(
+            VtEngine::MouseEncoding::Default, 0, 1, 1, true);
+        QCOMPARE(static_cast<unsigned char>(rel[3]), static_cast<unsigned char>(32 + 3));
+    }
+
+    void urlDetection() {
+        const QString line = QStringLiteral("see https://example.com/x for docs");
+        const int hit = line.indexOf(QStringLiteral("example"));
+        QCOMPARE(detectUrlAt(line, hit), QStringLiteral("https://example.com/x"));
+        // Outside the URL → empty.
+        QVERIFY(detectUrlAt(line, 0).isEmpty());
+        // Bare www. gets https:// prepended; trailing punctuation trimmed.
+        QCOMPARE(detectUrlAt(QStringLiteral("visit www.foo.org."), 8),
+                 QStringLiteral("https://www.foo.org"));
+    }
+
     void reflowRewrapsHistoryOnNarrow() {
         // Feed a long line that soft-wraps, push it into scrollback, then narrow.
         VtEngine vt(2, 20);

@@ -89,4 +89,27 @@ QList<quint32> decodeRawRect(const Rectangle& r, const QByteArray& pixelData, in
     return pixels;
 }
 
+QByteArray encodePointerEvent(int x, int y, int buttonMask) {
+    const int px = x < 0 ? 0 : x;
+    const int py = y < 0 ? 0 : y;
+    QByteArray msg;
+    msg.append(char(5));                          // PointerEvent
+    msg.append(char(buttonMask & 0xff));
+    msg.append(char((px >> 8) & 0xff)); msg.append(char(px & 0xff));
+    msg.append(char((py >> 8) & 0xff)); msg.append(char(py & 0xff));
+    return msg;
+}
+
+QByteArray encodeKeyEvent(quint32 keysym, bool down) {
+    QByteArray msg;
+    msg.append(char(4));                          // KeyEvent
+    msg.append(char(down ? 1 : 0));
+    msg.append(char(0)); msg.append(char(0));     // padding
+    msg.append(char((keysym >> 24) & 0xff));
+    msg.append(char((keysym >> 16) & 0xff));
+    msg.append(char((keysym >> 8) & 0xff));
+    msg.append(char(keysym & 0xff));
+    return msg;
+}
+
 } // namespace macxterm::connect::rfb

@@ -62,6 +62,12 @@ public:
     MouseEncoding mouseEncoding() const { return m_mouseEncoding; }
     bool mouseEnabled() const { return m_mouseTracking != MouseTracking::None; }
 
+    // Encode one mouse event for the far end (pure; the widget maps pixels→cells
+    // first). cb is the button/motion code before the legacy +32 offset; col1/row1
+    // are 1-based. SGR (1006) emits ESC[<cb;col;row(M|m); the default X10 form
+    // emits ESC[M with byte-offset fields (release → button 3).
+    static QByteArray encodeMouseReport(MouseEncoding enc, int cb, int col1, int row1, bool release);
+
 signals:
     void outputReady(const QByteArray& bytes);
     void screenUpdated();
@@ -94,5 +100,10 @@ private:
     friend int vt_sb_pushline(int cols, const void* cells, void* user);
     friend int vt_sb_popline(int cols, void* cells, void* user);
 };
+
+// Detect a hyperlink spanning column `col` (0-based) of `line`. Matches
+// http(s)/ftp/file URLs and bare "www." hosts, trims trailing sentence
+// punctuation, and prepends https:// to bare www. hosts. Empty if none.
+QString detectUrlAt(const QString& line, int col);
 
 } // namespace macxterm::term

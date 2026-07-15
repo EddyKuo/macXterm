@@ -74,6 +74,44 @@ private slots:
         QCOMPARE(s.bitsPerPixel, quint8(32));
         QCOMPARE(s.name, QStringLiteral("desktop"));
     }
+
+    void encodePointerEventWire() {
+        // Left button down at (300, 200): type 5, mask 1, x=0x012C, y=0x00C8.
+        const QByteArray m = encodePointerEvent(300, 200, 1);
+        QByteArray want; want.append(char(5)); want.append(char(1));
+        want.append(char(0x01)); want.append(char(0x2C));   // x = 300 big-endian
+        want.append(char(0x00)); want.append(char(0xC8));   // y = 200 big-endian
+        QCOMPARE(m, want);
+    }
+
+    void encodePointerEventClampsNegative() {
+        const QByteArray m = encodePointerEvent(-5, -1, 0);
+        QByteArray want; want.append(char(5)); want.append(char(0));
+        want.append(char(0)); want.append(char(0));
+        want.append(char(0)); want.append(char(0));
+        QCOMPARE(m, want);
+    }
+
+    void encodeKeyEventWire() {
+        // 'A' (0x41) key down: type 4, down 1, pad pad, keysym 00 00 00 41.
+        const QByteArray m = encodeKeyEvent(0x41, true);
+        QByteArray want; want.append(char(4)); want.append(char(1));
+        want.append(char(0)); want.append(char(0));
+        want.append(char(0)); want.append(char(0)); want.append(char(0)); want.append(char(0x41));
+        QCOMPARE(m, want);
+        // Key up flips only the down flag.
+        const QByteArray up = encodeKeyEvent(0x41, false);
+        QCOMPARE(static_cast<unsigned char>(up[1]), static_cast<unsigned char>(0));
+    }
+
+    void encodeKeyEventBigEndianKeysym() {
+        // Return keysym 0xFF0D → bytes 00 00 FF 0D.
+        const QByteArray m = encodeKeyEvent(0xFF0D, true);
+        QCOMPARE(static_cast<unsigned char>(m[4]), static_cast<unsigned char>(0x00));
+        QCOMPARE(static_cast<unsigned char>(m[5]), static_cast<unsigned char>(0x00));
+        QCOMPARE(static_cast<unsigned char>(m[6]), static_cast<unsigned char>(0xFF));
+        QCOMPARE(static_cast<unsigned char>(m[7]), static_cast<unsigned char>(0x0D));
+    }
 };
 
 QTEST_APPLESS_MAIN(TestRfb)

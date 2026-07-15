@@ -52,5 +52,14 @@ FramebufferUpdate parseFramebufferUpdate(const QByteArray& bytes);
 QList<quint32> decodeRawRect(const Rectangle& r, const QByteArray& pixelData,
                              int bytesPerPixel = 4);
 
+// Encode an RFB PointerEvent (client message-type 5): button-mask byte then the
+// x,y position as big-endian uint16 (negatives clamped to 0). buttonMask: bit0
+// left, bit1 middle, bit2 right, bits 3/4 wheel up/down.
+QByteArray encodePointerEvent(int x, int y, int buttonMask);
+
+// Encode an RFB KeyEvent (client message-type 4): down-flag byte, two padding
+// bytes, then the X11 keysym as a big-endian uint32.
+QByteArray encodeKeyEvent(quint32 keysym, bool down);
+
 } // namespace rfb
 } // namespace macxterm::connect
