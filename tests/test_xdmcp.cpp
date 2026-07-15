@@ -1,9 +1,42 @@
 #include "connect/XdmcpProtocol.h"
+#include "connect/XdmcpConnection.h"
 #include <QtTest/QtTest>
 #include <QUdpSocket>
 #include <QScopeGuard>
+#include <QSignalSpy>
 
 using namespace macxterm::connect::xdmcp;
+using macxterm::connect::XdmcpConnection;
+
+// Build a Willing / Accept / rejection packet the way a display manager would,
+// for the loopback fixtures below.
+static QByteArray makeWilling(const QByteArray& host, const QByteArray& status) {
+    QByteArray p;
+    auto u16 = [&](int v){ p.append(char((v>>8)&0xff)); p.append(char(v&0xff)); };
+    auto arr = [&](const QByteArray& a){ p.append(char(a.size())); p.append(a); };
+    u16(1); u16(Willing);
+    u16(1 + 1 + host.size() + 1 + status.size());
+    arr(QByteArray()); arr(host); arr(status);
+    return p;
+}
+static QByteArray makeAccept(quint32 sessionId) {
+    QByteArray p;
+    auto u16 = [&](int v){ p.append(char((v>>8)&0xff)); p.append(char(v&0xff)); };
+    auto u32 = [&](quint32 v){ p.append(char((v>>24)&0xff)); p.append(char((v>>16)&0xff));
+                               p.append(char((v>>8)&0xff)); p.append(char(v&0xff)); };
+    auto arr = [&](const QByteArray& a){ p.append(char(a.size())); p.append(a); };
+    u16(1); u16(Accept);
+    u16(4 + 1 + 1 + 1 + 1);   // sessionId + 4 empty ARRAY8s
+    u32(sessionId);
+    arr({}); arr({}); arr({}); arr({});
+    return p;
+}
+static QByteArray makeOpcode(quint16 opcode) {
+    QByteArray p;
+    auto u16 = [&](int v){ p.append(char((v>>8)&0xff)); p.append(char(v&0xff)); };
+    u16(1); u16(opcode); u16(0);
+    return p;
+}
 
 class TestXdmcp : public QObject {
     Q_OBJECT
@@ -107,6 +140,105 @@ private slots:
         QVERIFY(sawQuery);
         QVERIFY(w.valid);
         QCOMPARE(w.hostname, QByteArray("xdm.local"));
+    }
+
+    // ── S32-02: Request encoding, Accept parsing, rejection detection ──
+
+    void encodeRequestAndReparseHeader() {
+        RequestParams rp;
+        rp.displayNumber = 0;
+        rp.connectionTypes = {0};
+        rp.connectionAddresses = { QByteArray("\x7f\x00\x00\x01", 4) };
+        rp.authorizationNames = { QByteArray("MIT-MAGIC-COOKIE-1") };
+        const QByteArray pkt = encodeRequest(rp);
+        const Header h = parseHeader(pkt);
+        QVERIFY(h.valid);
+        QCOMPARE(h.opcode, quint16(Request));
+        QCOMPARE(h.length, quint16(pkt.size() - 6));   // header excluded
+        QVERIFY(pkt.contains(QByteArray("MIT-MAGIC-COOKIE-1")));
+    }
+
+    void parseAcceptRoundTrip() {
+        const AcceptInfo a = parseAccept(makeAccept(0xDEADBEEF));
+        QVERIFY(a.valid);
+        QCOMPARE(a.sessionId, quint32(0xDEADBEEF));
+    }
+
+    void parseAcceptRejectsWrongOpcode() {
+        QVERIFY(!parseAccept(makeWilling("h", "s")).valid);
+    }
+
+    void rejectionOpcodes() {
+        QVERIFY(isRejection(Decline));
+        QVERIFY(isRejection(Refuse));
+        QVERIFY(isRejection(Failed));
+        QVERIFY(!isRejection(Accept));
+        QVERIFY(!isRejection(Willing));
+    }
+
+    // Full state machine over loopback UDP: a stub display manager answers
+    // Query→Willing and Request→Accept; XdmcpConnection must emit accepted with
+    // the right session id, and the manager must receive a well-formed Request.
+    void handshakeQueryRequestAccept() {
+        QUdpSocket xdm;
+        QVERIFY(xdm.bind(QHostAddress::LocalHost, 0));
+        auto guard = qScopeGuard([&]{ xdm.close(); });
+
+        bool gotWellFormedRequest = false;
+        QObject::connect(&xdm, &QUdpSocket::readyRead, &xdm, [&] {
+            while (xdm.hasPendingDatagrams()) {
+                QByteArray dg(xdm.pendingDatagramSize(), '\0');
+                QHostAddress from; quint16 fromPort = 0;
+                xdm.readDatagram(dg.data(), dg.size(), &from, &fromPort);
+                const Header h = parseHeader(dg);
+                if (h.opcode == Query) {
+                    xdm.writeDatagram(makeWilling("xdm.local", "Willing to manage"), from, fromPort);
+                } else if (h.opcode == Request) {
+                    if (dg.contains(QByteArray("MIT-MAGIC-COOKIE-1"))) gotWellFormedRequest = true;
+                    xdm.writeDatagram(makeAccept(0x12345678), from, fromPort);
+                }
+            }
+        });
+
+        XdmcpConnection conn;
+        QSignalSpy willingSpy(&conn, &XdmcpConnection::willing);
+        QSignalSpy acceptSpy(&conn, &XdmcpConnection::accepted);
+        QVERIFY(conn.start(QStringLiteral("127.0.0.1"), xdm.localPort()));
+
+        QVERIFY(QTest::qWaitFor([&]{ return acceptSpy.count() > 0; }, 5000));
+        QCOMPARE(willingSpy.count(), 1);
+        QCOMPARE(acceptSpy.count(), 1);
+        QCOMPARE(acceptSpy.first().at(0).toUInt(), quint32(0x12345678));
+        QVERIFY(gotWellFormedRequest);
+    }
+
+    // Rejection path: the manager Declines the Request.
+    void handshakeDeclineRejects() {
+        QUdpSocket xdm;
+        QVERIFY(xdm.bind(QHostAddress::LocalHost, 0));
+        auto guard = qScopeGuard([&]{ xdm.close(); });
+
+        QObject::connect(&xdm, &QUdpSocket::readyRead, &xdm, [&] {
+            while (xdm.hasPendingDatagrams()) {
+                QByteArray dg(xdm.pendingDatagramSize(), '\0');
+                QHostAddress from; quint16 fromPort = 0;
+                xdm.readDatagram(dg.data(), dg.size(), &from, &fromPort);
+                const Header h = parseHeader(dg);
+                if (h.opcode == Query)
+                    xdm.writeDatagram(makeWilling("xdm", "ok"), from, fromPort);
+                else if (h.opcode == Request)
+                    xdm.writeDatagram(makeOpcode(Decline), from, fromPort);
+            }
+        });
+
+        XdmcpConnection conn;
+        QSignalSpy rejectSpy(&conn, &XdmcpConnection::rejected);
+        QSignalSpy acceptSpy(&conn, &XdmcpConnection::accepted);
+        QVERIFY(conn.start(QStringLiteral("127.0.0.1"), xdm.localPort()));
+
+        QVERIFY(QTest::qWaitFor([&]{ return rejectSpy.count() > 0; }, 5000));
+        QCOMPARE(rejectSpy.first().at(0).toUInt(), quint32(Decline));
+        QCOMPARE(acceptSpy.count(), 0);
     }
 };
 

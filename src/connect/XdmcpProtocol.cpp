@@ -62,4 +62,59 @@ WillingInfo parseWilling(const QByteArray& buf) {
     return w;
 }
 
+QByteArray encodeRequest(const RequestParams& p) {
+    QByteArray body;
+    putU16(body, p.displayNumber);
+    // ARRAY16 connection-types: CARD8 count + count×CARD16.
+    body.append(char(p.connectionTypes.size() & 0xff));
+    for (quint16 t : p.connectionTypes) putU16(body, t);
+    // ARRAYofARRAY8 connection-addresses.
+    body.append(char(p.connectionAddresses.size() & 0xff));
+    for (const QByteArray& a : p.connectionAddresses) putArray8(body, a);
+    putArray8(body, p.authenticationName);
+    putArray8(body, p.authenticationData);
+    // ARRAYofARRAY8 authorization-names.
+    body.append(char(p.authorizationNames.size() & 0xff));
+    for (const QByteArray& a : p.authorizationNames) putArray8(body, a);
+    putArray8(body, p.manufacturerDisplayID);
+
+    QByteArray pkt;
+    putU16(pkt, kVersion);
+    putU16(pkt, Request);
+    putU16(pkt, static_cast<quint16>(body.size()));
+    pkt.append(body);
+    return pkt;
+}
+
+AcceptInfo parseAccept(const QByteArray& buf) {
+    AcceptInfo a;
+    const Header h = parseHeader(buf);
+    if (!h.valid || h.opcode != Accept) return a;
+    int off = 6;
+    if (off + 4 > buf.size()) return a;
+    a.sessionId = (static_cast<quint32>(static_cast<quint8>(buf[off])) << 24)
+                | (static_cast<quint32>(static_cast<quint8>(buf[off + 1])) << 16)
+                | (static_cast<quint32>(static_cast<quint8>(buf[off + 2])) << 8)
+                |  static_cast<quint32>(static_cast<quint8>(buf[off + 3]));
+    off += 4;
+    auto readArray8 = [&](QByteArray& out) -> bool {
+        if (off + 1 > buf.size()) return false;
+        const int len = static_cast<quint8>(buf[off++]);
+        if (off + len > buf.size()) return false;
+        out = buf.mid(off, len);
+        off += len;
+        return true;
+    };
+    if (!readArray8(a.authenticationName)) return a;
+    if (!readArray8(a.authenticationData)) return a;
+    if (!readArray8(a.authorizationName)) return a;
+    if (!readArray8(a.authorizationData)) return a;
+    a.valid = true;
+    return a;
+}
+
+bool isRejection(quint16 opcode) {
+    return opcode == Decline || opcode == Refuse || opcode == Failed;
+}
+
 } // namespace macxterm::connect::xdmcp

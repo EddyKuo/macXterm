@@ -51,4 +51,37 @@ struct WillingInfo {
 // if the opcode is wrong or the body is truncated.
 WillingInfo parseWilling(const QByteArray& buf);
 
+// Fields of a Request packet (client → manager, opcode 7). Most deployments use
+// display 0, connection-type 0 (Internet/IPv4) with the client's 4-byte address,
+// empty authentication, and MIT-MAGIC-COOKIE-1 authorization.
+struct RequestParams {
+    quint16 displayNumber = 0;
+    QList<quint16> connectionTypes;         // ARRAY16
+    QList<QByteArray> connectionAddresses;  // ARRAYofARRAY8 (one per type)
+    QByteArray authenticationName;          // ARRAY8
+    QByteArray authenticationData;          // ARRAY8
+    QList<QByteArray> authorizationNames;   // ARRAYofARRAY8
+    QByteArray manufacturerDisplayID;       // ARRAY8
+};
+
+// Encode a Request packet from the given fields.
+QByteArray encodeRequest(const RequestParams& p);
+
+// Fields of an Accept packet (manager → client, opcode 8): the session id plus
+// the negotiated authentication/authorization names and data.
+struct AcceptInfo {
+    quint32 sessionId = 0;
+    QByteArray authenticationName, authenticationData;
+    QByteArray authorizationName, authorizationData;
+    bool valid = false;
+};
+
+// Parse an Accept packet (header opcode must be Accept). valid=false on a wrong
+// opcode or a truncated body.
+AcceptInfo parseAccept(const QByteArray& buf);
+
+// True if the opcode is a terminal rejection (Decline / Refuse / Failed), i.e.
+// the manager declined to start a session.
+bool isRejection(quint16 opcode);
+
 } // namespace macxterm::connect::xdmcp
