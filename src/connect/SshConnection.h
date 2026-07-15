@@ -4,6 +4,7 @@
 #include <QByteArray>
 
 class QSocketNotifier;
+class QTimer;
 typedef struct _LIBSSH2_SESSION LIBSSH2_SESSION;
 typedef struct _LIBSSH2_CHANNEL LIBSSH2_CHANNEL;
 
@@ -58,6 +59,8 @@ private:
     std::vector<X11Fwd> m_x11;
     JumpRelay* m_jump = nullptr;
     QByteArray m_kbdPassword;   // answer for keyboard-interactive prompts
+    QTimer* m_keepalive = nullptr;   // periodic libssh2_keepalive_send driver
+    bool m_stayOpen = false;         // keep pane open after a remote command exits
     int m_cols = 80;
     int m_rows = 24;
 };

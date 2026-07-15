@@ -71,6 +71,27 @@ private slots:
         QCOMPARE(f.value("agentforward").toString(), QStringLiteral("1"));
     }
 
+    void advancedSshKeepaliveRemoteCmdStayOpen() {
+        QVariantMap f;
+        SessionForm::AdvancedOptions o;
+        o.sshKeepalive = 30;
+        o.sshRemoteCommand = "tail -f /var/log/syslog";
+        o.sshStayOpen = true;
+        SessionForm::applyAdvanced(f, SessionType::Ssh, false, o);
+        QCOMPARE(f.value("keepalive").toString(), QStringLiteral("30"));
+        QCOMPARE(f.value("remotecommand").toString(), QStringLiteral("tail -f /var/log/syslog"));
+        QCOMPARE(f.value("stayopen").toString(), QStringLiteral("1"));
+    }
+
+    void advancedSshKeepaliveOffOmitted() {
+        QVariantMap f;
+        SessionForm::AdvancedOptions o;   // sshKeepalive = 0, no command, not stay-open
+        SessionForm::applyAdvanced(f, SessionType::Ssh, false, o);
+        QVERIFY(!f.contains("keepalive"));       // 0 = off → omitted
+        QVERIFY(!f.contains("remotecommand"));
+        QVERIFY(!f.contains("stayopen"));
+    }
+
     void advancedGatewayCredsOnlyWhenGateway() {
         SessionForm::AdvancedOptions o;
         o.gatewayUser = "jump"; o.gatewayPassword = "pw";

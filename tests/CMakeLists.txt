@@ -30,6 +30,7 @@ set(MACXTERM_TESTS
   test_httpserver
   test_simpletcp
   test_sessionform
+  test_sessiontree
   test_termconfig
   test_sftpentry
   test_ftp

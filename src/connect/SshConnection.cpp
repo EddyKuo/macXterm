@@ -1,5 +1,6 @@
 #include "connect/SshConnection.h"
 #include <QSocketNotifier>
+#include <QTimer>
 #include <QString>
 #include <QByteArray>
 #include <libssh2.h>
@@ -323,10 +324,32 @@ bool SshConnection::connectSession(const core::Session& session) {
         libssh2_channel_request_auth_agent(m_channel);
     }
 
-    if (libssh2_channel_shell(m_channel) != 0) {
+    // Run a specific remote command instead of an interactive shell when the
+    // session requests one ("remotecommand"); otherwise open a login shell.
+    const QByteArray remoteCmd = session.param("remotecommand").toUtf8();
+    const int chOk = remoteCmd.isEmpty()
+        ? libssh2_channel_shell(m_channel)
+        : libssh2_channel_exec(m_channel, remoteCmd.constData());
+    if (chOk != 0) {
         cleanup(); setState(State::Failed);
-        emit errorOccurred("Failed to open shell channel");
+        emit errorOccurred(remoteCmd.isEmpty() ? "Failed to open shell channel"
+                                               : "Failed to run remote command");
         return false;
+    }
+    // Keep the pane open after the command finishes if asked (MobaXterm's "do
+    // not exit after command ends"); default is to close on EOF.
+    m_stayOpen = (session.param("stayopen") == "1");
+
+    // Optional keepalive: ask libssh2 to want a server reply every N seconds and
+    // drive libssh2_keepalive_send from a Qt timer so idle sessions stay up.
+    if (const int secs = session.param("keepalive").toInt(); secs > 0) {
+        libssh2_keepalive_config(m_session, 1, secs);
+        m_keepalive = new QTimer(this);
+        m_keepalive->setInterval(secs * 1000);
+        connect(m_keepalive, &QTimer::timeout, this, [this] {
+            if (m_session) { int n = 0; libssh2_keepalive_send(m_session, &n); }
+        });
+        m_keepalive->start();
     }
 
     // Switch to non-blocking and drive reads via the Qt event loop.
@@ -354,7 +377,7 @@ void SshConnection::onSocketReadable() {
         }
     }
     pumpX11();   // service forwarded X11 channels on the same session
-    if (libssh2_channel_eof(m_channel)) {
+    if (libssh2_channel_eof(m_channel) && !m_stayOpen) {
         disconnectSession();
         setState(State::Closed);
     }
@@ -433,6 +456,7 @@ void SshConnection::disconnectSession() {
 }
 
 void SshConnection::cleanup() {
+    if (m_keepalive) { m_keepalive->stop(); m_keepalive->deleteLater(); m_keepalive = nullptr; }
     if (m_notifier) { m_notifier->setEnabled(false); m_notifier->deleteLater(); m_notifier = nullptr; }
 #if !defined(_WIN32)
     for (auto& f : m_x11) {

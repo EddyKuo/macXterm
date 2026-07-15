@@ -189,6 +189,7 @@ void MainWindow::buildMenus() {
     file->addAction(QStringLiteral("New Shell"), this, [this] { openLocalShell(); });
     file->addAction(QStringLiteral("New Session…"), this, [this] {
         SessionDialog dlg(this);
+        dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
         if (dlg.exec() == QDialog::Accepted) { core::Session s = dlg.session(); addAndSaveSession(s); openSession(s); }
     });
     file->addSeparator();
@@ -491,6 +492,7 @@ void MainWindow::buildToolbar() {
     auto* newSession = tb->addAction(QStringLiteral("New Session"));
     connect(newSession, &QAction::triggered, this, [this] {
         SessionDialog dlg(this);
+        dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
         if (dlg.exec() == QDialog::Accepted) {
             core::Session s = dlg.session();
             addAndSaveSession(s);   // persist so it survives restart
@@ -584,15 +586,30 @@ void MainWindow::buildToolbar() {
 void MainWindow::reloadSessionTree() {
     m_tree->clear();
     auto* root = new QTreeWidgetItem(m_tree, {m_sessions.name()});
-    for (const core::Session& s : m_sessions.sessions()) {
-        new QTreeWidgetItem(root, {s.name()});
+    // Group bookmarks by their "folder" param so the tree mirrors MobaXterm's
+    // organised bookmark view (loose sessions first, then named folders).
+    for (const core::FolderGroup& g : core::groupSessionsByFolder(m_sessions.sessions())) {
+        QTreeWidgetItem* parent = root;
+        if (!g.folder.isEmpty()) {
+            parent = new QTreeWidgetItem(root, {g.folder});
+            parent->setExpanded(true);
+        }
+        for (const core::Session& s : g.sessions) {
+            auto* item = new QTreeWidgetItem(
+                parent, {core::sessionGlyph(s) + QLatin1Char(' ') + s.name()});
+            item->setData(0, Qt::UserRole, s.name());   // exact name for lookup
+        }
     }
     root->setExpanded(true);
 }
 
 void MainWindow::onTreeActivated(QTreeWidgetItem* item, int) {
     if (!item) return;
-    if (const core::Session* s = m_sessions.findSession(item->text(0))) {
+    // Prefer the exact session name stashed in UserRole (the visible text is
+    // prefixed with an icon glyph); fall back to the text for the root/folders.
+    const QVariant nameData = item->data(0, Qt::UserRole);
+    const QString name = nameData.isValid() ? nameData.toString() : item->text(0);
+    if (const core::Session* s = m_sessions.findSession(name)) {
         openSession(*s);
     }
 }
@@ -646,6 +663,7 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
             const core::Session* sp = m_sessions.findSession(name);
             if (!sp) return;
             SessionDialog dlg(this);
+            dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
             dlg.setSession(*sp);
             if (dlg.exec() == QDialog::Accepted) {
                 deleteSession(name);            // remove the old entry

@@ -53,6 +53,18 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_gateway = new QLineEdit(this);
     m_gateway->setPlaceholderText(QStringLiteral("[user@]host[:port] — optional jump host"));
 
+    // Bookmark organisation: folder (editable — existing folders are seeded via
+    // setKnownFolders) and an optional display icon.
+    m_folder = new QComboBox(this);
+    m_folder->setEditable(true);
+    m_folder->addItem(QString());   // blank = top-level (no folder)
+    m_icon = new QComboBox(this);
+    m_icon->addItem(QStringLiteral("(default for type)"), QString());
+    for (const auto& e : {QStringLiteral("🔑"), QStringLiteral("🖥️"), QStringLiteral("🌐"),
+                          QStringLiteral("📁"), QStringLiteral("⭐"), QStringLiteral("🐚"),
+                          QStringLiteral("🔒"), QStringLiteral("🧪")})
+        m_icon->addItem(e, e);
+
     form->addRow(QStringLiteral("Name"), m_name);
     form->addRow(QStringLiteral("Type"), m_type);
     form->addRow(QStringLiteral("Host"), m_host);
@@ -62,6 +74,8 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(QStringLiteral("Private key"), keyRow);
     form->addRow(QStringLiteral("Key passphrase"), m_passphrase);
     form->addRow(QStringLiteral("SSH gateway"), m_gateway);
+    form->addRow(QStringLiteral("Folder"), m_folder);
+    form->addRow(QStringLiteral("Icon"), m_icon);
 
     // --- Advanced, per-protocol options (backends already read these params) ---
     m_advanced = new QGroupBox(QStringLiteral("Advanced"), this);
@@ -71,6 +85,13 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_x11->setChecked(true);
     m_agent        = new QCheckBox(QStringLiteral("Use SSH agent for authentication"), this);
     m_agentForward = new QCheckBox(QStringLiteral("Forward SSH agent"), this);
+    m_sshKeepalive = new QSpinBox(this);
+    m_sshKeepalive->setRange(0, 86400);
+    m_sshKeepalive->setSuffix(QStringLiteral(" s"));
+    m_sshKeepalive->setSpecialValueText(QStringLiteral("off"));   // 0 = off
+    m_sshRemoteCmd = new QLineEdit(this);
+    m_sshRemoteCmd->setPlaceholderText(QStringLiteral("run a command instead of a login shell"));
+    m_sshStayOpen  = new QCheckBox(QStringLiteral("Keep pane open after command exits"), this);
     m_gwUser       = new QLineEdit(this);
     m_gwUser->setPlaceholderText(QStringLiteral("gateway username (optional)"));
     m_gwPassword   = new QLineEdit(this);
@@ -97,6 +118,9 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_advForm->addRow(QString(), m_x11);
     m_advForm->addRow(QString(), m_agent);
     m_advForm->addRow(QString(), m_agentForward);
+    m_advForm->addRow(QStringLiteral("Keepalive interval"), m_sshKeepalive);
+    m_advForm->addRow(QStringLiteral("Remote command"), m_sshRemoteCmd);
+    m_advForm->addRow(QString(), m_sshStayOpen);
     m_advForm->addRow(QStringLiteral("Gateway username"), m_gwUser);
     m_advForm->addRow(QStringLiteral("Gateway password"), m_gwPassword);
     m_advForm->addRow(QStringLiteral("Gateway key passphrase"), m_gwPassphrase);
@@ -157,6 +181,9 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         m_advForm->setRowVisible(m_x11, ssh);
         m_advForm->setRowVisible(m_agent, ssh);
         m_advForm->setRowVisible(m_agentForward, ssh);
+        m_advForm->setRowVisible(m_sshKeepalive, ssh);
+        m_advForm->setRowVisible(m_sshRemoteCmd, ssh);
+        m_advForm->setRowVisible(m_sshStayOpen, ssh);
         m_advForm->setRowVisible(m_gwUser, gateway);
         m_advForm->setRowVisible(m_gwPassword, gateway);
         m_advForm->setRowVisible(m_gwPassphrase, gateway);
@@ -193,6 +220,15 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     layout->addWidget(buttons);
 }
 
+void SessionDialog::setKnownFolders(const QStringList& folders) {
+    const QString current = m_folder->currentText();
+    m_folder->clear();
+    m_folder->addItem(QString());   // blank = top-level
+    for (const QString& f : folders)
+        if (m_folder->findText(f) < 0) m_folder->addItem(f);
+    m_folder->setCurrentText(current);
+}
+
 void SessionDialog::browseKeyFile() {
     // Start in ~/.ssh when it exists, else the home directory.
     QString start = QDir::homePath() + QStringLiteral("/.ssh");
@@ -223,6 +259,13 @@ void SessionDialog::setSession(const core::Session& s) {
     m_keyfile->setText(s.param("keyfile"));
     m_passphrase->setText(s.param("passphrase"));
     m_gateway->setText(s.param("gateway"));
+    m_folder->setCurrentText(s.param("folder"));
+    {
+        const QString ic = s.param("icon");
+        const int idx = ic.isEmpty() ? 0 : m_icon->findData(ic);
+        if (idx < 0) { m_icon->addItem(ic, ic); m_icon->setCurrentText(ic); }
+        else m_icon->setCurrentIndex(idx);
+    }
 
     // Advanced options. Default-on flags use a "!= 0" test so an absent param
     // reads as enabled, matching the connection backends.
@@ -230,6 +273,9 @@ void SessionDialog::setSession(const core::Session& s) {
     m_x11->setChecked(s.param("x11", QStringLiteral("1")) != QLatin1String("0"));
     m_agent->setChecked(s.param("agent") == QLatin1String("1"));
     m_agentForward->setChecked(s.param("agentforward") == QLatin1String("1"));
+    m_sshKeepalive->setValue(s.param("keepalive").toInt());
+    m_sshRemoteCmd->setText(s.param("remotecommand"));
+    m_sshStayOpen->setChecked(s.param("stayopen") == QLatin1String("1"));
     m_gwUser->setText(s.param("gateway_user"));
     m_gwPassword->setText(s.param("gateway_password"));
     m_gwPassphrase->setText(s.param("gateway_passphrase"));
@@ -275,6 +321,10 @@ core::Session SessionDialog::session() const {
     if (!m_keyfile->text().isEmpty())    f.insert("keyfile", m_keyfile->text());
     if (!m_passphrase->text().isEmpty()) f.insert("passphrase", m_passphrase->text());
     if (!m_gateway->text().isEmpty())    f.insert("gateway", m_gateway->text());
+    if (!m_folder->currentText().trimmed().isEmpty())
+        f.insert("folder", m_folder->currentText().trimmed());
+    if (const QString ic = m_icon->currentData().toString(); !ic.isEmpty())
+        f.insert("icon", ic);
 
     // Advanced options: collect the widget state into a plain struct and let the
     // (unit-tested) SessionForm decide which params to serialize per type.
@@ -284,6 +334,9 @@ core::Session SessionDialog::session() const {
     o.x11           = m_x11->isChecked();
     o.agent         = m_agent->isChecked();
     o.agentForward  = m_agentForward->isChecked();
+    o.sshKeepalive     = m_sshKeepalive->value();
+    o.sshRemoteCommand = m_sshRemoteCmd->text();
+    o.sshStayOpen      = m_sshStayOpen->isChecked();
     o.gatewayUser       = m_gwUser->text();
     o.gatewayPassword   = m_gwPassword->text();
     o.gatewayPassphrase = m_gwPassphrase->text();

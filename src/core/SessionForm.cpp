@@ -45,6 +45,9 @@ void SessionForm::applyAdvanced(QVariantMap& f, SessionType type, bool hasGatewa
         if (!o.x11)          f.insert("x11", "0");
         if (o.agent)         f.insert("agent", "1");
         if (o.agentForward)  f.insert("agentforward", "1");
+        if (o.sshKeepalive > 0)            f.insert("keepalive", QString::number(o.sshKeepalive));
+        if (!o.sshRemoteCommand.isEmpty()) f.insert("remotecommand", o.sshRemoteCommand);
+        if (o.sshStayOpen)                 f.insert("stayopen", "1");
     }
     if (hasGateway) {
         if (!o.gatewayUser.isEmpty())       f.insert("gateway_user", o.gatewayUser);

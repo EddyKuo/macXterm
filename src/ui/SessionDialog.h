@@ -22,6 +22,10 @@ public:
     void setSession(const core::Session& s);
     core::Session session() const;
 
+    // Seed the folder picker with the folders that already exist in the tree so
+    // the user can file this bookmark under one (or type a new name).
+    void setKnownFolders(const QStringList& folders);
+
 private slots:
     void onAccept();
 
@@ -38,6 +42,8 @@ private:
     QLineEdit* m_keyfile = nullptr;
     QLineEdit* m_passphrase = nullptr;
     QLineEdit* m_gateway = nullptr;   // SSH jump host: [user@]host[:port]
+    QComboBox* m_folder = nullptr;    // param "folder" (bookmark folder; editable)
+    QComboBox* m_icon = nullptr;      // param "icon" (emoji shown in the tree)
 
     // Advanced, per-protocol options (map to Session params the backends read).
     QGroupBox*  m_advanced = nullptr;
@@ -47,6 +53,9 @@ private:
     QCheckBox* m_x11 = nullptr;           // param "x11" (default on)
     QCheckBox* m_agent = nullptr;         // param "agent"
     QCheckBox* m_agentForward = nullptr;  // param "agentforward"
+    QSpinBox*  m_sshKeepalive = nullptr;  // param "keepalive" (seconds; 0 = off)
+    QLineEdit* m_sshRemoteCmd = nullptr;  // param "remotecommand"
+    QCheckBox* m_sshStayOpen = nullptr;   // param "stayopen"
     QLineEdit* m_gwUser = nullptr;        // param "gateway_user"
     QLineEdit* m_gwPassword = nullptr;    // param "gateway_password"
     QLineEdit* m_gwPassphrase = nullptr;  // param "gateway_passphrase"

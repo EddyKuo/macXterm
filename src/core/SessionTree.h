@@ -34,4 +34,25 @@ private:
     QList<Session> m_sessions;
 };
 
+// One display group in the session tree: the folder label (empty = loose,
+// top-level sessions) and the sessions filed under it.
+struct FolderGroup {
+    QString folder;
+    QList<Session> sessions;
+};
+
+// Group a flat session list by each session's "folder" param for tree display.
+// Loose sessions (no/blank folder) come first under an empty label, then each
+// named folder in first-seen order; session order within a group is preserved.
+// Pure — no GUI — so the grouping is unit-tested independent of the tree widget.
+QList<FolderGroup> groupSessionsByFolder(const QList<Session>& sessions);
+
+// The set of distinct folder names present in a session list, in first-seen
+// order (used to populate the SessionDialog folder picker).
+QStringList folderNames(const QList<Session>& sessions);
+
+// A small emoji shown before a bookmark's name in the tree. An explicit "icon"
+// param wins; otherwise it defaults from the session type. Pure/testable.
+QString sessionGlyph(const Session& s);
+
 } // namespace macxterm::core

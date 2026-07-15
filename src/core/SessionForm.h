@@ -27,6 +27,9 @@ public:
         bool x11 = true;            // default on
         bool agent = false;
         bool agentForward = false;
+        int sshKeepalive = 0;       // seconds between keepalives; 0 = off
+        QString sshRemoteCommand;   // run this instead of an interactive shell
+        bool sshStayOpen = false;   // keep the pane open after the command exits
         QString gatewayUser, gatewayPassword, gatewayPassphrase;
         // RDP
         QString domain;
