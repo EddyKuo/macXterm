@@ -40,6 +40,7 @@ public slots:
 private slots:
     void refresh();
     void goUp();
+    void goHome();
     void onItemActivated();
     void download();
     void upload();
@@ -63,6 +64,7 @@ private:
     QLabel* m_status = nullptr;
     QToolButton* m_follow = nullptr;
     QString m_cwd = QStringLiteral(".");
+    QString m_home;   // initial remote directory (for the Home button)
     QPoint m_dragStart;
     // Maps a temp local path (being edited) -> its remote path, for re-upload.
     QHash<QString, QString> m_editing;

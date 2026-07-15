@@ -955,7 +955,7 @@ void MainWindow::showSftpFor(const core::Session& session) {
         m_sftpPanel = new SftpPanel(this);
         m_sftpDock = new QDockWidget(QStringLiteral("SFTP"), this);
         m_sftpDock->setWidget(m_sftpPanel);
-        addDockWidget(Qt::RightDockWidgetArea, m_sftpDock);
+        addDockWidget(Qt::LeftDockWidgetArea, m_sftpDock);   // MobaXterm places it on the left
     }
     m_sftpDock->show();
     m_sftpPanel->openFor(resolveSecrets(session));   // dedicated SFTP session (blocking; LAN-fast)

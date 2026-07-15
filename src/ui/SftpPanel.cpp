@@ -22,9 +22,27 @@
 #include <QDropEvent>
 #include <QMouseEvent>
 #include <QStandardPaths>
+#include <QDateTime>
 #include <QUuid>
 
 namespace macxterm::ui {
+
+namespace {
+// Tree item that sorts the Size column numerically (not lexically) and the
+// Modified column chronologically, while other columns fall back to text.
+class SftpItem : public QTreeWidgetItem {
+public:
+    using QTreeWidgetItem::QTreeWidgetItem;
+    bool operator<(const QTreeWidgetItem& other) const override {
+        const int col = treeWidget() ? treeWidget()->sortColumn() : 0;
+        if (col == 1)   // Size
+            return data(1, Qt::UserRole).toULongLong() < other.data(1, Qt::UserRole).toULongLong();
+        if (col == 2)   // Modified
+            return data(2, Qt::UserRole).toLongLong() < other.data(2, Qt::UserRole).toLongLong();
+        return text(col).compare(other.text(col), Qt::CaseInsensitive) < 0;
+    }
+};
+} // namespace
 
 SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
     setAcceptDrops(true);   // accept OS file drops for upload
@@ -40,6 +58,7 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
         bar->addWidget(b);
         return b;
     };
+    mkBtn(QStringLiteral("⌂"), &SftpPanel::goHome)->setToolTip(QStringLiteral("Home folder"));
     mkBtn(QStringLiteral("↑"), &SftpPanel::goUp);
     mkBtn(QStringLiteral("⟳"), &SftpPanel::refresh);
     mkBtn(QStringLiteral("↓ Download"), &SftpPanel::download);
@@ -47,6 +66,7 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
     m_follow = new QToolButton(this);
     m_follow->setText(QStringLiteral("⇄ Follow"));
     m_follow->setCheckable(true);
+    m_follow->setChecked(true);   // follow the terminal's folder by default (MobaXterm-like)
     m_follow->setToolTip(QStringLiteral("Follow the terminal's current folder"));
     bar->addWidget(m_follow);
     bar->addStretch();
@@ -57,11 +77,14 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
     layout->addWidget(m_pathBar);
 
     m_list = new QTreeWidget(this);
-    m_list->setColumnCount(3);
-    m_list->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Size"), QStringLiteral("Perms")});
+    m_list->setColumnCount(4);
+    m_list->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Size"),
+                             QStringLiteral("Modified"), QStringLiteral("Perms")});
     m_list->setRootIsDecorated(false);
     m_list->header()->setStretchLastSection(false);
     m_list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_list->setSortingEnabled(true);
+    m_list->sortByColumn(0, Qt::AscendingOrder);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     m_list->viewport()->installEventFilter(this);   // for drag-out
     connect(m_list, &QTreeWidget::itemActivated, this, &SftpPanel::onItemActivated);
@@ -86,6 +109,7 @@ bool SftpPanel::openFor(const core::Session& session) {
     // Resolve "." to an absolute path so follow-terminal-folder can compare.
     const QString abs = m_sftp.realpath(QStringLiteral("."));
     m_cwd = abs.isEmpty() ? QStringLiteral(".") : abs;
+    m_home = m_cwd;   // remember the login directory for the Home button
     navigateTo(m_cwd);
     return true;
 }
@@ -96,22 +120,34 @@ void SftpPanel::navigateTo(const QString& path) {
     if (!m_sftp.list(path, entries)) return;   // error() already emitted
     m_cwd = path;
     m_pathBar->setText(path);
+    // Repopulating with sorting live is O(n log n) per insert; disable while filling.
+    const bool wasSorting = m_list->isSortingEnabled();
+    m_list->setSortingEnabled(false);
     m_list->clear();
     for (const sftp::SftpEntry& e : entries) {
-        auto* item = new QTreeWidgetItem(m_list);
+        auto* item = new SftpItem(m_list);
         item->setText(0, (e.isDir ? QStringLiteral("📁 ") : QString()) + e.name);
         item->setText(1, e.isDir ? QString() : e.sizeString());
-        item->setText(2, e.permString());
+        const QString when = e.mtime > 0
+            ? QDateTime::fromSecsSinceEpoch(e.mtime).toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+            : QString();
+        item->setText(2, when);
+        item->setText(3, e.permString());
         item->setData(0, Qt::UserRole, e.name);
         item->setData(0, Qt::UserRole + 1, e.isDir);
         item->setData(0, Qt::UserRole + 2, static_cast<uint>(e.permissions));
+        item->setData(1, Qt::UserRole, static_cast<qulonglong>(e.size));  // numeric sort key
+        item->setData(2, Qt::UserRole, static_cast<qlonglong>(e.mtime));  // chronological sort key
     }
+    m_list->setSortingEnabled(wasSorting);
     setStatus(QStringLiteral("%1 items").arg(entries.size()));
 }
 
 void SftpPanel::refresh() { navigateTo(m_cwd); }
 
 void SftpPanel::goUp() { navigateTo(sftp::RemotePath::parent(m_cwd)); }
+
+void SftpPanel::goHome() { if (!m_home.isEmpty()) navigateTo(m_home); }
 
 void SftpPanel::setRemoteCwd(const QString& absPath) {
     if (!m_follow || !m_follow->isChecked()) return;
