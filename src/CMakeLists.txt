@@ -59,6 +59,7 @@ add_library(macxterm_core STATIC
   sftp/SftpEntry.cpp
   sftp/SftpConnection.cpp
   sftp/FtpClient.cpp
+  sftp/RemoteTransfer.cpp
   x11/X11Display.cpp
   x11/X11Server.cpp
 )

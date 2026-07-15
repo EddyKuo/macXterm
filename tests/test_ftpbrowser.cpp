@@ -1,9 +1,11 @@
 #include "sftp/FtpClient.h"
+#include "sftp/RemoteTransfer.h"
 #include "tools/FtpServer.h"
 #include "core/Session.h"
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QScopeGuard>
 
 using namespace macxterm;
 
@@ -47,6 +49,17 @@ private slots:
         tools::FtpServer server;
         server.setRootDir(root.path());
         server.moveToThread(&serverThread);
+        // Always stop the server thread on scope exit — even if a QVERIFY below
+        // returns early — so the QThread is never destroyed while still running
+        // (which would qFatal/crash and pop an OS error dialog).
+        auto guard = qScopeGuard([&] {
+            if (serverThread.isRunning()) {
+                QMetaObject::invokeMethod(&server, [&] { server.stop(); },
+                                          Qt::BlockingQueuedConnection);
+                serverThread.quit();
+                serverThread.wait();
+            }
+        });
         bool started = false;
         QMetaObject::invokeMethod(&server, [&] { started = server.start(0); },
                                   Qt::BlockingQueuedConnection);
@@ -90,11 +103,26 @@ private slots:
         QVERIFY(client.makeDir(QStringLiteral("newdir")));
         QVERIFY(QFileInfo(root.filePath("newdir")).isDir());
 
+        // Recursive directory transfer (sftp::uploadTree / downloadTree) — build a
+        // nested local tree, upload it, then download it back and compare.
+        QTemporaryDir src;
+        QDir(src.path()).mkpath(QStringLiteral("a/b"));
+        { QFile f(src.filePath("a/top.txt")); f.open(QIODevice::WriteOnly); f.write("T"); }
+        { QFile f(src.filePath("a/b/deep.txt")); f.open(QIODevice::WriteOnly); f.write("DEEP"); }
+        QVERIFY(sftp::uploadTree(client, src.filePath("a"), QStringLiteral("uptree")) > 0);
+        QVERIFY(QFileInfo(root.filePath("uptree/top.txt")).isFile());
+        QVERIFY(QFileInfo(root.filePath("uptree/b/deep.txt")).isFile());
+
+        QTemporaryDir dst;
+        const qint64 got = sftp::downloadTree(
+            client, QStringLiteral("uptree"), dst.filePath("copy"), /*isDir=*/true);
+        QVERIFY(got > 0);
+        QFile deep(dst.filePath("copy/b/deep.txt"));
+        QVERIFY(deep.open(QIODevice::ReadOnly));
+        QCOMPARE(deep.readAll(), QByteArray("DEEP"));
+
         client.disconnectSession();
-        // Stop the server in its own thread before tearing it down.
-        QMetaObject::invokeMethod(&server, [&] { server.stop(); }, Qt::BlockingQueuedConnection);
-        serverThread.quit();
-        serverThread.wait();
+        // Server-thread teardown handled by the scope guard above.
     }
 };
 

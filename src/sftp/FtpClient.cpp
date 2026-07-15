@@ -134,12 +134,11 @@ QTcpSocket* FtpClient::openPasv() {
 
 bool FtpClient::list(const QString& path, QList<SftpEntry>& out) {
     if (!isReady()) return false;
-    if (!path.isEmpty() && path != m_cwd) {
-        if (sendCmd(QStringLiteral("CWD"), path) / 100 == 2) m_cwd = path;
-    }
     QTcpSocket* data = openPasv();
     if (!data) { emit error(QStringLiteral("PASV failed")); return false; }
-    const int code = sendCmd(QStringLiteral("LIST"), QString());
+    // LIST with an explicit path (server resolves it) — do NOT CWD, or later
+    // RETR/STOR of paths built relative to the caller's base would double up.
+    const int code = sendCmd(QStringLiteral("LIST"), path);
     if (code != 150 && code != 125) { data->deleteLater(); emit error(QStringLiteral("LIST failed")); return false; }
     QByteArray body;
     while (data->state() == QAbstractSocket::ConnectedState) {
