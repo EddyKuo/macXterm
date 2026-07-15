@@ -34,8 +34,15 @@ public:
     // Returns false when the session has ended. No-op without FreeRDP.
     bool poll();
 
+    // Input injection from the render surface. Coordinates are in framebuffer
+    // pixels; buttonMask bit0 left, bit1 middle, bit2 right; keysym is an X11
+    // keysym (printable chars are sent as Unicode). No-ops without FreeRDP.
+    void sendPointerEvent(int x, int y, int buttonMask);
+    void sendKeyEvent(quint32 keysym, bool down);
+
 private:
     rdp_freerdp* m_instance = nullptr;   // only used when built with FreeRDP
+    int m_prevButtonMask = 0;            // for mouse button transition detection
 };
 
 } // namespace macxterm::connect

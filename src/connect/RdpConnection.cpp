@@ -5,6 +5,8 @@
 #include <freerdp/settings.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/codec/color.h>
+#include <freerdp/input.h>
+#include <freerdp/scancode.h>
 #endif
 
 namespace macxterm::connect {
@@ -109,6 +111,82 @@ void RdpConnection::disconnectSession() {
 
 qint64 RdpConnection::send(const QByteArray&) {
     return -1;   // RDP input is injected into the FreeRDP surface, not this stream
+}
+
+#ifdef MACXTERM_HAVE_FREERDP
+// Map an X11 keysym (as emitted by the surface widget) to an RDP set-1 scancode
+// for the non-printable keys. Returns 0 when the key should be sent as Unicode.
+static UINT16 keysymToRdpScancode(quint32 keysym, bool* extended) {
+    *extended = false;
+    switch (keysym) {
+        case 0xff08: return RDP_SCANCODE_BACKSPACE;
+        case 0xff09: return RDP_SCANCODE_TAB;
+        case 0xff0d: return RDP_SCANCODE_RETURN;
+        case 0xff1b: return RDP_SCANCODE_ESCAPE;
+        case 0xff50: *extended = true; return RDP_SCANCODE_HOME;
+        case 0xff51: *extended = true; return RDP_SCANCODE_LEFT;
+        case 0xff52: *extended = true; return RDP_SCANCODE_UP;
+        case 0xff53: *extended = true; return RDP_SCANCODE_RIGHT;
+        case 0xff54: *extended = true; return RDP_SCANCODE_DOWN;
+        case 0xff55: *extended = true; return RDP_SCANCODE_PRIOR;
+        case 0xff56: *extended = true; return RDP_SCANCODE_NEXT;
+        case 0xff57: *extended = true; return RDP_SCANCODE_END;
+        case 0xff63: *extended = true; return RDP_SCANCODE_INSERT;
+        case 0xffff: *extended = true; return RDP_SCANCODE_DELETE;
+        case 0xffe1: return RDP_SCANCODE_LSHIFT;
+        case 0xffe3: return RDP_SCANCODE_LCONTROL;
+        case 0xffe9: return RDP_SCANCODE_LMENU;
+        default: return 0;
+    }
+}
+#endif
+
+void RdpConnection::sendPointerEvent(int x, int y, int buttonMask) {
+#ifdef MACXTERM_HAVE_FREERDP
+    if (!m_instance || !m_instance->context) return;
+    rdpInput* input = m_instance->context->input;
+    if (!input) return;
+    const UINT16 px = static_cast<UINT16>(x < 0 ? 0 : x);
+    const UINT16 py = static_cast<UINT16>(y < 0 ? 0 : y);
+    freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, px, py);
+    // Emit a button event for each button whose state changed.
+    const struct { int bit; UINT16 flag; } btns[] = {
+        {1, PTR_FLAGS_BUTTON1},   // left
+        {2, PTR_FLAGS_BUTTON3},   // middle
+        {4, PTR_FLAGS_BUTTON2},   // right
+    };
+    for (const auto& b : btns) {
+        const bool now = buttonMask & b.bit;
+        const bool was = m_prevButtonMask & b.bit;
+        if (now != was)
+            freerdp_input_send_mouse_event(
+                input, static_cast<UINT16>(b.flag | (now ? PTR_FLAGS_DOWN : 0)), px, py);
+    }
+    m_prevButtonMask = buttonMask;
+#else
+    (void)x; (void)y; (void)buttonMask;
+#endif
+}
+
+void RdpConnection::sendKeyEvent(quint32 keysym, bool down) {
+#ifdef MACXTERM_HAVE_FREERDP
+    if (!m_instance || !m_instance->context) return;
+    rdpInput* input = m_instance->context->input;
+    if (!input) return;
+    bool extended = false;
+    const UINT16 sc = keysymToRdpScancode(keysym, &extended);
+    if (sc != 0) {
+        UINT16 flags = down ? KBD_FLAGS_DOWN : KBD_FLAGS_RELEASE;
+        if (extended) flags |= KBD_FLAGS_EXTENDED;
+        freerdp_input_send_keyboard_event(input, flags, sc);
+    } else if (keysym >= 0x20 && keysym < 0xff00) {
+        // Printable: send as a Unicode key event (layout-independent).
+        freerdp_input_send_unicode_keyboard_event(
+            input, down ? 0 : KBD_FLAGS_RELEASE, static_cast<UINT16>(keysym));
+    }
+#else
+    (void)keysym; (void)down;
+#endif
 }
 
 QImage RdpConnection::currentFrame() const {

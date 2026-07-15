@@ -869,6 +869,9 @@ void MainWindow::openGraphicalSession(const core::Session& sessionIn) {
         vnc->connectSession(resolveSecrets(session));
     } else {  // RDP
         auto* rdp = new connect::RdpConnection(surface);
+        // Forward surface input to the RDP session.
+        connect(surface, &RdpSurfaceWidget::pointerEvent, rdp, &connect::RdpConnection::sendPointerEvent);
+        connect(surface, &RdpSurfaceWidget::keyEvent, rdp, &connect::RdpConnection::sendKeyEvent);
         if (rdp->connectSession(resolveSecrets(session))) {
             // Pump the FreeRDP event loop and refresh the surface periodically.
             auto* timer = new QTimer(surface);
