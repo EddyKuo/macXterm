@@ -74,23 +74,32 @@ void VncConnection::onReadyRead() {
         m_buf.remove(0, 24 + nameLen);
         setState(State::Connected);
         emit serverReady(m_serverInit.width, m_serverInit.height, m_serverInit.name);
+        // Advertise the encodings we can decode (preference order); the server
+        // then compresses rectangles instead of only sending RAW.
+        m_sock->write(rfb::encodeSetEncodings(
+            {rfb::EncHextile, rfb::EncRRE, rfb::EncCopyRect, rfb::EncRaw}));
         requestFramebuffer();
         m_phase = Phase::Running;
     }
 
     if (m_phase == Phase::Running) {
-        // Decode any complete FramebufferUpdate messages (RAW encoding).
+        // Decode any complete FramebufferUpdate messages. Each rectangle's
+        // payload length depends on its encoding, so decodeRect reports how many
+        // bytes it consumed (or complete=false when we need to wait for more).
         while (!m_buf.isEmpty() && static_cast<quint8>(m_buf[0]) == 0) {
             const rfb::FramebufferUpdate hdr = rfb::parseFramebufferUpdate(m_buf);
             if (!hdr.valid) break;
             int off = 4;
             bool complete = true;
             for (const rfb::Rectangle& r : hdr.rects) {
-                const int bytes = int(r.width) * int(r.height) * 4;
-                if (m_buf.size() < off + 12 + bytes) { complete = false; break; }
-                const QByteArray px = m_buf.mid(off + 12, bytes);
-                emit rectDecoded(r.x, r.y, r.width, r.height, rfb::decodeRawRect(r, px, 4));
-                off += 12 + bytes;
+                off += 12;   // step over this rect's header (already parsed)
+                const rfb::RectData d = rfb::decodeRect(r, m_buf, off, 4);
+                if (!d.complete) { complete = false; break; }
+                if (d.isCopy)
+                    emit copyRect(d.srcX, d.srcY, r.x, r.y, r.width, r.height);
+                else
+                    emit rectDecoded(r.x, r.y, r.width, r.height, d.pixels);
+                off += d.consumed;
             }
             if (!complete) break;
             m_buf.remove(0, off);

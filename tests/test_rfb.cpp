@@ -112,6 +112,106 @@ private slots:
         QCOMPARE(static_cast<unsigned char>(m[6]), static_cast<unsigned char>(0xFF));
         QCOMPARE(static_cast<unsigned char>(m[7]), static_cast<unsigned char>(0x0D));
     }
+
+    // ── Encoding dispatch: CopyRect / RRE / Hextile via decodeRect ──
+
+    void decodeRectRawViaDispatch() {
+        Rectangle r; r.width = 2; r.height = 1; r.encoding = EncRaw;
+        QByteArray b;   // two BGRA pixels: red, green
+        b.append(char(0x00)); b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0xFF));
+        b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0x00)); b.append(char(0xFF));
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(d.complete);
+        QCOMPARE(d.consumed, 8);
+        QCOMPARE(d.pixels.size(), 2);
+        QCOMPARE(d.pixels[0], quint32(0xFFFF0000));
+    }
+
+    void decodeRectCopyRect() {
+        Rectangle r; r.x = 10; r.y = 20; r.width = 4; r.height = 4; r.encoding = EncCopyRect;
+        QByteArray b;   // src (x=5, y=7) big-endian u16
+        b.append(char(0x00)); b.append(char(0x05));
+        b.append(char(0x00)); b.append(char(0x07));
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(d.complete);
+        QVERIFY(d.isCopy);
+        QCOMPARE(d.consumed, 4);
+        QCOMPARE(d.srcX, 5);
+        QCOMPARE(d.srcY, 7);
+    }
+
+    void decodeRectRRE() {
+        // 2×2 rect, blue background, one 1×1 red subrect at (1,0).
+        Rectangle r; r.width = 2; r.height = 2; r.encoding = EncRRE;
+        QByteArray b;
+        b.append(char(0)); b.append(char(0)); b.append(char(0)); b.append(char(1));   // 1 subrect
+        b.append(char(0xFF)); b.append(char(0x00)); b.append(char(0x00)); b.append(char(0xFF)); // bg blue
+        b.append(char(0x00)); b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0xFF)); // subrect red
+        auto p16 = [&](int v){ b.append(char((v>>8)&0xff)); b.append(char(v&0xff)); };
+        p16(1); p16(0); p16(1); p16(1);   // x=1,y=0,w=1,h=1
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(d.complete);
+        QCOMPARE(d.consumed, 4 + 4 + (4 + 8));
+        QCOMPARE(d.pixels.size(), 4);
+        QCOMPARE(d.pixels[0], quint32(0xFF0000FF));   // blue bg
+        QCOMPARE(d.pixels[1], quint32(0xFFFF0000));   // red subrect at (1,0)
+        QCOMPARE(d.pixels[2], quint32(0xFF0000FF));
+    }
+
+    void decodeRectRREIncompleteWaits() {
+        Rectangle r; r.width = 2; r.height = 2; r.encoding = EncRRE;
+        QByteArray b;   // claims 1 subrect but supplies no subrect bytes
+        b.append(char(0)); b.append(char(0)); b.append(char(0)); b.append(char(1));
+        b.append(char(0xFF)); b.append(char(0x00)); b.append(char(0x00)); b.append(char(0xFF));
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(!d.complete);           // not enough bytes → wait
+        QCOMPARE(d.consumed, 0);
+    }
+
+    void decodeRectHextileSolidBackground() {
+        // 2×2 rect, single tile, BackgroundSpecified only → whole tile = bg green.
+        Rectangle r; r.width = 2; r.height = 2; r.encoding = EncHextile;
+        QByteArray b;
+        b.append(char(0x02));   // subencoding: BackgroundSpecified
+        b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0x00)); b.append(char(0xFF)); // green
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(d.complete);
+        QCOMPARE(d.consumed, 5);
+        QCOMPARE(d.pixels.size(), 4);
+        for (quint32 p : d.pixels) QCOMPARE(p, quint32(0xFF00FF00));
+    }
+
+    void decodeRectHextileForegroundSubrect() {
+        // 2×2 rect: bg green, one 1×1 red foreground subrect at tile-pos (0,0).
+        Rectangle r; r.width = 2; r.height = 2; r.encoding = EncHextile;
+        QByteArray b;
+        b.append(char(0x02 | 0x04 | 0x08));   // Background + Foreground + AnySubrects
+        b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0x00)); b.append(char(0xFF)); // bg green
+        b.append(char(0x00)); b.append(char(0x00)); b.append(char(0xFF)); b.append(char(0xFF)); // fg red
+        b.append(char(1));           // 1 subrect
+        b.append(char(0x00));        // x=0,y=0
+        b.append(char(0x00));        // w-1=0,h-1=0 → 1×1
+        const RectData d = decodeRect(r, b, 0, 4);
+        QVERIFY(d.complete);
+        QCOMPARE(d.pixels.size(), 4);
+        QCOMPARE(d.pixels[0], quint32(0xFFFF0000));   // red subrect at (0,0)
+        QCOMPARE(d.pixels[3], quint32(0xFF00FF00));   // green bg elsewhere
+    }
+
+    void decodeRectUnknownEncodingIncomplete() {
+        Rectangle r; r.width = 1; r.height = 1; r.encoding = 999;
+        QVERIFY(!decodeRect(r, QByteArray(64, '\0'), 0, 4).complete);
+    }
+
+    void setEncodingsWire() {
+        const QByteArray m = encodeSetEncodings({EncHextile, EncRaw});
+        QByteArray want;
+        want.append(char(2)); want.append(char(0));         // type, padding
+        want.append(char(0)); want.append(char(2));         // count = 2
+        want.append(char(0)); want.append(char(0)); want.append(char(0)); want.append(char(5)); // Hextile
+        want.append(char(0)); want.append(char(0)); want.append(char(0)); want.append(char(0)); // Raw
+        QCOMPARE(m, want);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestRfb)

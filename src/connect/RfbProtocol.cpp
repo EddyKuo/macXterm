@@ -1,4 +1,5 @@
 #include "connect/RfbProtocol.h"
+#include <algorithm>
 
 namespace macxterm::connect::rfb {
 
@@ -87,6 +88,134 @@ QList<quint32> decodeRawRect(const Rectangle& r, const QByteArray& pixelData, in
         pixels.push_back((0xFFu << 24) | (red << 16) | (green << 8) | blue);
     }
     return pixels;
+}
+
+// Read one server pixel as 0xAARRGGBB (little-endian BGRX, the common 32-bpp
+// true-colour format). For bpp < 4 the low bytes are treated as blue/green/red.
+static quint32 readPixel(const QByteArray& b, int off, int bpp) {
+    const quint8 blue  = static_cast<quint8>(b[off]);
+    const quint8 green = bpp > 1 ? static_cast<quint8>(b[off + 1]) : 0;
+    const quint8 red   = bpp > 2 ? static_cast<quint8>(b[off + 2]) : 0;
+    return (0xFFu << 24) | (red << 16) | (green << 8) | blue;
+}
+
+static quint16 rd16be(const QByteArray& b, int off) {
+    return (static_cast<quint8>(b[off]) << 8) | static_cast<quint8>(b[off + 1]);
+}
+
+RectData decodeRect(const Rectangle& r, const QByteArray& buf, int off, int bpp) {
+    RectData out;
+    const int w = int(r.width), h = int(r.height);
+    const int n = w * h;
+
+    switch (r.encoding) {
+    case EncRaw: {
+        const int need = n * bpp;
+        if (buf.size() < off + need) return out;
+        out.pixels = decodeRawRect(r, buf.mid(off, need), bpp);
+        out.consumed = need; out.complete = true;
+        return out;
+    }
+    case EncCopyRect: {
+        if (buf.size() < off + 4) return out;
+        out.isCopy = true;
+        out.srcX = rd16be(buf, off);
+        out.srcY = rd16be(buf, off + 2);
+        out.consumed = 4; out.complete = true;
+        return out;
+    }
+    case EncRRE: {
+        if (buf.size() < off + 4 + bpp) return out;
+        const quint32 nsub = (static_cast<quint32>(static_cast<quint8>(buf[off])) << 24)
+                           | (static_cast<quint32>(static_cast<quint8>(buf[off + 1])) << 16)
+                           | (static_cast<quint32>(static_cast<quint8>(buf[off + 2])) << 8)
+                           |  static_cast<quint32>(static_cast<quint8>(buf[off + 3]));
+        const int subSize = bpp + 8;
+        const int need = 4 + bpp + int(nsub) * subSize;
+        if (buf.size() < off + need) return out;
+        const quint32 bg = readPixel(buf, off + 4, bpp);
+        out.pixels = QList<quint32>(n, bg);
+        int p = off + 4 + bpp;
+        for (quint32 s = 0; s < nsub; ++s, p += subSize) {
+            const quint32 color = readPixel(buf, p, bpp);
+            const int sx = rd16be(buf, p + bpp), sy = rd16be(buf, p + bpp + 2);
+            const int sw = rd16be(buf, p + bpp + 4), sh = rd16be(buf, p + bpp + 6);
+            for (int yy = 0; yy < sh; ++yy)
+                for (int xx = 0; xx < sw; ++xx) {
+                    const int px = sx + xx, py = sy + yy;
+                    if (px >= 0 && px < w && py >= 0 && py < h) out.pixels[py * w + px] = color;
+                }
+        }
+        out.consumed = need; out.complete = true;
+        return out;
+    }
+    case EncHextile: {
+        out.pixels = QList<quint32>(n, 0xFF000000u);
+        quint32 bg = 0xFF000000u, fg = 0xFFFFFFFFu;
+        int p = off;
+        for (int ty = 0; ty < h; ty += 16) {
+            const int th = std::min(16, h - ty);
+            for (int tx = 0; tx < w; tx += 16) {
+                const int tw = std::min(16, w - tx);
+                if (buf.size() < p + 1) return out;
+                const quint8 sub = static_cast<quint8>(buf[p++]);
+                auto paint = [&](int lx, int ly, int lw, int lh, quint32 c) {
+                    for (int yy = 0; yy < lh; ++yy)
+                        for (int xx = 0; xx < lw; ++xx) {
+                            const int px = tx + lx + xx, py = ty + ly + yy;
+                            if (px < w && py < h) out.pixels[py * w + px] = c;
+                        }
+                };
+                if (sub & 0x01) {   // Raw tile
+                    const int need = tw * th * bpp;
+                    if (buf.size() < p + need) return out;
+                    for (int yy = 0; yy < th; ++yy)
+                        for (int xx = 0; xx < tw; ++xx) {
+                            const int px = tx + xx, py = ty + yy;
+                            if (px < w && py < h)
+                                out.pixels[py * w + px] = readPixel(buf, p + (yy * tw + xx) * bpp, bpp);
+                        }
+                    p += need;
+                    continue;
+                }
+                if (sub & 0x02) { if (buf.size() < p + bpp) return out; bg = readPixel(buf, p, bpp); p += bpp; }
+                if (sub & 0x04) { if (buf.size() < p + bpp) return out; fg = readPixel(buf, p, bpp); p += bpp; }
+                paint(0, 0, tw, th, bg);   // tile background
+                if (sub & 0x08) {          // AnySubrects
+                    if (buf.size() < p + 1) return out;
+                    const int ns = static_cast<quint8>(buf[p++]);
+                    const bool coloured = sub & 0x10;
+                    for (int s = 0; s < ns; ++s) {
+                        quint32 c = fg;
+                        if (coloured) { if (buf.size() < p + bpp) return out; c = readPixel(buf, p, bpp); p += bpp; }
+                        if (buf.size() < p + 2) return out;
+                        const quint8 xy = static_cast<quint8>(buf[p]);
+                        const quint8 wh = static_cast<quint8>(buf[p + 1]);
+                        p += 2;
+                        paint(xy >> 4, xy & 0x0f, (wh >> 4) + 1, (wh & 0x0f) + 1, c);
+                    }
+                }
+            }
+        }
+        out.consumed = p - off; out.complete = true;
+        return out;
+    }
+    default:
+        return out;   // unknown encoding → wait / skip
+    }
+}
+
+QByteArray encodeSetEncodings(const QList<qint32>& encodings) {
+    QByteArray msg;
+    msg.append(char(2));                      // SetEncodings
+    msg.append(char(0));                      // padding
+    const int n = encodings.size();
+    msg.append(char((n >> 8) & 0xff)); msg.append(char(n & 0xff));
+    for (qint32 e : encodings) {
+        msg.append(char((e >> 24) & 0xff)); msg.append(char((e >> 16) & 0xff));
+        msg.append(char((e >> 8) & 0xff));  msg.append(char(e & 0xff));
+    }
+    return msg;
 }
 
 QByteArray encodePointerEvent(int x, int y, int buttonMask) {

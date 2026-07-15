@@ -52,6 +52,29 @@ FramebufferUpdate parseFramebufferUpdate(const QByteArray& bytes);
 QList<quint32> decodeRawRect(const Rectangle& r, const QByteArray& pixelData,
                              int bytesPerPixel = 4);
 
+// RFB rectangle encoding numbers we decode.
+enum Encoding : qint32 { EncRaw = 0, EncCopyRect = 1, EncRRE = 2, EncHextile = 5 };
+
+// Result of decoding one rectangle's payload out of a byte stream.
+struct RectData {
+    bool complete = false;        // false = the buffer doesn't yet hold the whole rect
+    int  consumed = 0;            // payload bytes used (excludes the 12-byte rect header)
+    QList<quint32> pixels;        // decoded ARGB, row-major (empty for CopyRect)
+    bool isCopy = false;          // true → blit from (srcX,srcY) rather than `pixels`
+    int  srcX = 0, srcY = 0;      // CopyRect source origin
+};
+
+// Decode one rectangle's payload (Raw / CopyRect / RRE / Hextile) beginning at
+// byte `off` in `buf` (which points just past the rect's 12-byte header). `bpp`
+// is the server's bytes-per-pixel. Returns complete=false (consumed=0) when the
+// buffer is too short to hold the whole rectangle, so a streaming reader can
+// wait for more data. Unknown encodings return complete=false. Pure/testable.
+RectData decodeRect(const Rectangle& r, const QByteArray& buf, int off, int bpp = 4);
+
+// Encode a SetEncodings client message (type 2) advertising `encodings` in
+// preference order (most-preferred first).
+QByteArray encodeSetEncodings(const QList<qint32>& encodings);
+
 // Encode an RFB PointerEvent (client message-type 5): button-mask byte then the
 // x,y position as big-endian uint16 (negatives clamped to 0). buttonMask: bit0
 // left, bit1 middle, bit2 right, bits 3/4 wheel up/down.

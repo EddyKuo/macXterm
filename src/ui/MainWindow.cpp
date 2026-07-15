@@ -885,6 +885,14 @@ void MainWindow::openGraphicalSession(const core::Session& sessionIn) {
                             tile.setPixel(c, r, px[r * w + c]);
                     surface->updateRect(x, y, tile);
                 });
+        // CopyRect: blit an already-painted region of the framebuffer to a new
+        // spot (e.g. a scrolled/dragged window) without re-sending pixels.
+        connect(vnc, &connect::VncConnection::copyRect, surface,
+                [surface](int sx, int sy, int x, int y, int w, int h) {
+                    const QImage& fb = surface->frame();
+                    if (fb.isNull()) return;
+                    surface->updateRect(x, y, fb.copy(sx, sy, w, h));
+                });
         // Forward surface input to the server unless this is a view-only session.
         const bool viewOnly = (session.param("viewonly") == "1");
         vnc->setViewOnly(viewOnly);

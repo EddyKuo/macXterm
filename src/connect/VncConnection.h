@@ -34,6 +34,8 @@ public:
 signals:
     // Emitted when a rectangle is decoded (x, y, w, h, ARGB pixels row-major).
     void rectDecoded(int x, int y, int w, int h, const QList<quint32>& pixels);
+    // CopyRect: blit the w×h region at (srcX,srcY) to (x,y) in the framebuffer.
+    void copyRect(int srcX, int srcY, int x, int y, int w, int h);
     void serverReady(int width, int height, const QString& name);
 
 private slots:
