@@ -78,6 +78,12 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_gwPassphrase = new QLineEdit(this);
     m_gwPassphrase->setEchoMode(QLineEdit::Password);
     m_domain         = new QLineEdit(this);
+    m_rdpResolution  = new QComboBox(this);
+    m_rdpResolution->setEditable(false);
+    m_rdpResolution->addItems({QStringLiteral("Default"), QStringLiteral("1920×1080"),
+                               QStringLiteral("1600×900"), QStringLiteral("1440×900"),
+                               QStringLiteral("1366×768"), QStringLiteral("1280×1024"),
+                               QStringLiteral("1280×800"), QStringLiteral("1024×768")});
     m_rdpClipboard   = new QCheckBox(QStringLiteral("Redirect clipboard"), this);
     m_rdpClipboard->setChecked(true);
     m_rdpDrives      = new QCheckBox(QStringLiteral("Redirect drives"), this);
@@ -94,6 +100,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_advForm->addRow(QStringLiteral("Gateway password"), m_gwPassword);
     m_advForm->addRow(QStringLiteral("Gateway key passphrase"), m_gwPassphrase);
     m_advForm->addRow(QStringLiteral("Domain"), m_domain);
+    m_advForm->addRow(QStringLiteral("Resolution"), m_rdpResolution);
     m_advForm->addRow(QString(), m_rdpClipboard);
     m_advForm->addRow(QString(), m_rdpDrives);
     m_advForm->addRow(QString(), m_rdpAudio);
@@ -125,6 +132,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         m_advForm->setRowVisible(m_gwPassword, gateway);
         m_advForm->setRowVisible(m_gwPassphrase, gateway);
         m_advForm->setRowVisible(m_domain, rdp);
+        m_advForm->setRowVisible(m_rdpResolution, rdp);
         m_advForm->setRowVisible(m_rdpClipboard, rdp);
         m_advForm->setRowVisible(m_rdpDrives, rdp);
         m_advForm->setRowVisible(m_rdpAudio, rdp);
@@ -187,6 +195,13 @@ void SessionDialog::setSession(const core::Session& s) {
     m_gwPassword->setText(s.param("gateway_password"));
     m_gwPassphrase->setText(s.param("gateway_passphrase"));
     m_domain->setText(s.param("domain"));
+    {
+        const QString w = s.param("width"), h = s.param("height");
+        const QString res = (!w.isEmpty() && !h.isEmpty())
+            ? QStringLiteral("%1×%2").arg(w, h) : QStringLiteral("Default");
+        const int idx = m_rdpResolution->findText(res);
+        m_rdpResolution->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
     m_rdpClipboard->setChecked(s.param("redirect_clipboard", QStringLiteral("1")) != QLatin1String("0"));
     m_rdpDrives->setChecked(s.param("redirect_drives") == QLatin1String("1"));
     m_rdpAudio->setChecked(s.param("redirect_audio") == QLatin1String("1"));
@@ -224,6 +239,13 @@ core::Session SessionDialog::session() const {
     }
     if (t == core::SessionType::Rdp) {
         if (!m_domain->text().isEmpty())     f.insert("domain", m_domain->text());
+        // Resolution "W×H" → width/height params; "Default" leaves them unset.
+        const QString res = m_rdpResolution->currentText();
+        const int cross = res.indexOf(QChar(0x00D7));   // ×
+        if (cross > 0) {
+            f.insert("width", res.left(cross));
+            f.insert("height", res.mid(cross + 1));
+        }
         if (!m_rdpClipboard->isChecked())    f.insert("redirect_clipboard", "0");
         if (m_rdpDrives->isChecked())        f.insert("redirect_drives", "1");
         if (m_rdpAudio->isChecked())         f.insert("redirect_audio", "1");

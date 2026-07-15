@@ -44,6 +44,15 @@ bool RdpConnection::connectSession(const core::Session& session) {
         freerdp_settings_set_string(settings, FreeRDP_Password, session.param("password").toUtf8().constData());
     if (!session.param("domain").isEmpty())
         freerdp_settings_set_string(settings, FreeRDP_Domain, session.param("domain").toUtf8().constData());
+    // Desktop resolution (params "width"/"height"; leave FreeRDP's default when unset).
+    {
+        const int w = session.param("width").toInt();
+        const int h = session.param("height").toInt();
+        if (w > 0 && h > 0) {
+            freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, static_cast<UINT32>(w));
+            freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, static_cast<UINT32>(h));
+        }
+    }
     // Accept self-signed / untrusted certs when explicitly requested (test
     // fixtures, or user opt-in for a known host).
     if (session.param("ignorecert") == "1")

@@ -52,6 +52,7 @@ private:
     QLineEdit* m_gwPassphrase = nullptr;  // param "gateway_passphrase"
     // RDP
     QLineEdit* m_domain = nullptr;        // param "domain"
+    QComboBox* m_rdpResolution = nullptr; // params "width"/"height"
     QCheckBox* m_rdpClipboard = nullptr;  // param "redirect_clipboard" (default on)
     QCheckBox* m_rdpDrives = nullptr;     // param "redirect_drives"
     QCheckBox* m_rdpAudio = nullptr;      // param "redirect_audio"
