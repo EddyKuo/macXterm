@@ -7,23 +7,25 @@
 # push tags, or point main at the current commit first.
 #
 # Usage:
-#   scripts/push-github.sh                 # push the current branch
+#   scripts/push-github.sh                 # push the current branch (SSH)
 #   scripts/push-github.sh --all           # push ALL local branches
 #   scripts/push-github.sh --all --tags    # ...and tags
 #   scripts/push-github.sh --main          # fast-forward main to HEAD, then push main + current
-#   scripts/push-github.sh --url git@github.com:EddyKuo/macXterm.git   # use SSH instead of HTTPS
+#   scripts/push-github.sh --url https://github.com/EddyKuo/macXterm.git   # use HTTPS instead
 #
-# Auth note: GitHub HTTPS pushes need a Personal Access Token (your account
-# password won't work). When git prompts for a password, paste a token with
-# "repo" scope (https://github.com/settings/tokens). To avoid repeat prompts:
-#   git config --global credential.helper osxkeychain
-# Or switch to SSH with --url git@github.com:EddyKuo/macXterm.git after adding
-# an SSH key to your GitHub account.
+# Auth note: default is SSH (git@github.com:EddyKuo/macXterm.git), which needs an
+# SSH key added to your GitHub account (https://github.com/settings/keys).
+# Verify with:  ssh -T git@github.com   (expects "Hi EddyKuo!").
+# Generate + add a key if needed:
+#   ssh-keygen -t ed25519 -C "you@example.com" && pbcopy < ~/.ssh/id_ed25519.pub
+#   # then paste it at https://github.com/settings/ssh/new
+# Prefer HTTPS instead? pass --url https://github.com/EddyKuo/macXterm.git and use
+# a Personal Access Token (repo scope) when git prompts for a password.
 
 set -euo pipefail
 
 REMOTE_NAME="origin"
-REMOTE_URL="https://github.com/EddyKuo/macXterm.git"
+REMOTE_URL="git@github.com:EddyKuo/macXterm.git"
 PUSH_ALL=0
 PUSH_TAGS=0
 SYNC_MAIN=0
@@ -37,7 +39,7 @@ while [ $# -gt 0 ]; do
     -t|--tags)  PUSH_TAGS=1 ;;
     -m|--main)  SYNC_MAIN=1 ;;
     -u|--url)   shift; [ $# -gt 0 ] || die "--url needs a value"; REMOTE_URL="$1" ;;
-    -h|--help)  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)          die "unknown option: $1 (try --help)" ;;
   esac
   shift
