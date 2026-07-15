@@ -45,6 +45,11 @@ public:
     void clearScrollback() { m_scrollback.clear(); }
     const QVector<Cell>& scrollbackLine(int i) const { return m_scrollback.at(i); }
 
+    // Bracketed-paste mode (DECSET 2004): when the far-end app has enabled it,
+    // pasted text must be wrapped in ESC[200~ … ESC[201~ so the app can tell a
+    // paste from typed input.
+    bool bracketedPaste() const { return m_bracketedPaste; }
+
 signals:
     void outputReady(const QByteArray& bytes);
     void screenUpdated();
@@ -54,6 +59,7 @@ signals:
 private:
     void syncFromVterm();
     void scanOsc(const QByteArray& bytes);      // sniff OSC 7 cwd from raw stream
+    void scanPrivateModes(const QByteArray& bytes);  // sniff DECSET/DECRST (e.g. 2004)
 
     VTerm* m_vt = nullptr;
     VTermScreen* m_vts = nullptr;
@@ -64,6 +70,10 @@ private:
     // OSC scanner state (for OSC 7 cwd / OSC 0,2 title).
     int m_oscState = 0;                  // 0 normal, 1 saw ESC, 2 in OSC body
     QByteArray m_oscBuf;
+    // CSI private-mode scanner state (for DECSET/DECRST like 2004 bracketed paste).
+    int m_csiState = 0;                  // 0 normal, 1 saw ESC, 2 saw '[', 3 in '?...' body
+    QByteArray m_csiParams;
+    bool m_bracketedPaste = false;
     friend void vt_output_cb(const char* s, size_t len, void* user);
     friend int vt_sb_pushline(int cols, const void* cells, void* user);
     friend int vt_sb_popline(int cols, void* cells, void* user);

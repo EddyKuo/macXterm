@@ -90,6 +90,28 @@ private slots:
         vt.clearScrollback();
         QCOMPARE(vt.scrollbackCount(), 0);
     }
+
+    void bracketedPasteModeTracks2004() {
+        VtEngine vt(3, 20);
+        QVERIFY(!vt.bracketedPaste());
+        vt.input(QByteArray("\x1b[?2004h"));   // enable
+        QVERIFY(vt.bracketedPaste());
+        vt.input(QByteArray("\x1b[?2004l"));   // disable
+        QVERIFY(!vt.bracketedPaste());
+    }
+
+    void bracketedPasteIgnoresOtherModes() {
+        VtEngine vt(3, 20);
+        vt.input(QByteArray("\x1b[?1049h"));   // altscreen, not 2004
+        QVERIFY(!vt.bracketedPaste());
+    }
+
+    void bracketedPasteSpansChunks() {
+        VtEngine vt(3, 20);
+        vt.input(QByteArray("\x1b[?20"));      // split mid-sequence
+        vt.input(QByteArray("04h"));
+        QVERIFY(vt.bracketedPaste());
+    }
 };
 
 QTEST_APPLESS_MAIN(TestVtEngine)

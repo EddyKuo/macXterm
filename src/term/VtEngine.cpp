@@ -171,8 +171,41 @@ void VtEngine::scanOsc(const QByteArray& bytes) {
     }
 }
 
+// Sniff DEC private mode set/reset — ESC [ ? <params> (h|l) — from the raw
+// stream. libvterm applies these internally but does not surface bracketed
+// paste (2004), which the widget needs when pasting. A small state machine so a
+// sequence may span multiple input() calls.
+void VtEngine::scanPrivateModes(const QByteArray& bytes) {
+    for (int i = 0; i < bytes.size(); ++i) {
+        const unsigned char b = static_cast<unsigned char>(bytes[i]);
+        switch (m_csiState) {
+        case 0: if (b == 0x1b) m_csiState = 1; break;
+        case 1: m_csiState = (b == '[') ? 2 : 0; break;
+        case 2:
+            if (b == '?') { m_csiState = 3; m_csiParams.clear(); }
+            else m_csiState = 0;              // not a private-mode CSI
+            break;
+        case 3:
+            if (b == 'h' || b == 'l') {       // set / reset
+                const bool set = (b == 'h');
+                for (const QByteArray& p : m_csiParams.split(';'))
+                    if (p == "2004") m_bracketedPaste = set;
+                m_csiState = 0;
+            } else if ((b >= '0' && b <= '9') || b == ';') {
+                if (m_csiParams.size() < 64) m_csiParams.append(static_cast<char>(b));
+            } else if (b == 0x1b) {
+                m_csiState = 1;               // a new escape started
+            } else {
+                m_csiState = 0;               // some other CSI final byte
+            }
+            break;
+        }
+    }
+}
+
 void VtEngine::input(const QByteArray& bytes) {
     scanOsc(bytes);
+    scanPrivateModes(bytes);
     vterm_input_write(m_vt, bytes.constData(), bytes.size());
     if (!m_pendingOutput.isEmpty()) {
         emit outputReady(m_pendingOutput);

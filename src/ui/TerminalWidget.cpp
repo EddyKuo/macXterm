@@ -355,10 +355,13 @@ void TerminalWidget::paste() {
     if (!m_conn) return;
     QString text = QApplication::clipboard()->text();
     if (text.isEmpty()) return;
-    // Multiline-paste guard: pasting text with embedded newlines can execute
-    // commands immediately in a shell, so confirm first (MobaXterm behaviour).
+
+    // When the far-end app enabled bracketed-paste mode it can distinguish a
+    // paste from typed input and won't auto-execute newlines, so the confirm
+    // dialog is unnecessary; otherwise guard multi-line pastes (MobaXterm-like).
+    const bool bracket = m_vt.bracketedPaste();
     const int lines = text.count('\n') + (text.endsWith('\n') ? 0 : 1);
-    if (text.contains('\n') && lines > 1) {
+    if (!bracket && text.contains('\n') && lines > 1) {
         const auto btn = QMessageBox::question(
             this, QStringLiteral("Confirm paste"),
             QStringLiteral("You are about to paste %1 lines. Continue?").arg(lines),
@@ -366,6 +369,8 @@ void TerminalWidget::paste() {
         if (btn != QMessageBox::Yes) return;
     }
     if (m_scrollOffset != 0) { m_scrollOffset = 0; update(); }
+
+    if (bracket) sendInput(QByteArray("\x1b[200~"));
 
     // Optional paste delay: dribble multi-line pastes one line at a time.
     if (m_pasteDelayMs > 0 && text.contains('\n')) {
@@ -377,9 +382,12 @@ void TerminalWidget::paste() {
             QTimer::singleShot(delay, this, [this, chunk] { sendInput(chunk); });
             delay += m_pasteDelayMs;
         }
+        if (bracket)
+            QTimer::singleShot(delay, this, [this] { sendInput(QByteArray("\x1b[201~")); });
         return;
     }
     sendInput(text.toUtf8());
+    if (bracket) sendInput(QByteArray("\x1b[201~"));
 }
 
 void TerminalWidget::selectAll() {
