@@ -6,6 +6,8 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QSpinBox>
+#include <QCheckBox>
+#include <QGroupBox>
 #include <QPushButton>
 #include <QFileDialog>
 #include <QDir>
@@ -61,7 +63,44 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(QStringLiteral("Key passphrase"), m_passphrase);
     form->addRow(QStringLiteral("SSH gateway"), m_gateway);
 
-    // Show only the auth fields relevant to the selected session type.
+    // --- Advanced, per-protocol options (backends already read these params) ---
+    m_advanced = new QGroupBox(QStringLiteral("Advanced"), this);
+    m_advForm = new QFormLayout(m_advanced);
+    m_compression  = new QCheckBox(QStringLiteral("Enable compression"), this);
+    m_x11          = new QCheckBox(QStringLiteral("X11 forwarding"), this);
+    m_x11->setChecked(true);
+    m_agent        = new QCheckBox(QStringLiteral("Use SSH agent for authentication"), this);
+    m_agentForward = new QCheckBox(QStringLiteral("Forward SSH agent"), this);
+    m_gwUser       = new QLineEdit(this);
+    m_gwUser->setPlaceholderText(QStringLiteral("gateway username (optional)"));
+    m_gwPassword   = new QLineEdit(this);
+    m_gwPassword->setEchoMode(QLineEdit::Password);
+    m_gwPassphrase = new QLineEdit(this);
+    m_gwPassphrase->setEchoMode(QLineEdit::Password);
+    m_domain         = new QLineEdit(this);
+    m_rdpClipboard   = new QCheckBox(QStringLiteral("Redirect clipboard"), this);
+    m_rdpClipboard->setChecked(true);
+    m_rdpDrives      = new QCheckBox(QStringLiteral("Redirect drives"), this);
+    m_rdpAudio       = new QCheckBox(QStringLiteral("Redirect audio"), this);
+    m_rdpNla         = new QCheckBox(QStringLiteral("Network Level Authentication (NLA)"), this);
+    m_rdpNla->setChecked(true);
+    m_rdpIgnoreCert  = new QCheckBox(QStringLiteral("Ignore certificate warnings"), this);
+
+    m_advForm->addRow(QString(), m_compression);
+    m_advForm->addRow(QString(), m_x11);
+    m_advForm->addRow(QString(), m_agent);
+    m_advForm->addRow(QString(), m_agentForward);
+    m_advForm->addRow(QStringLiteral("Gateway username"), m_gwUser);
+    m_advForm->addRow(QStringLiteral("Gateway password"), m_gwPassword);
+    m_advForm->addRow(QStringLiteral("Gateway key passphrase"), m_gwPassphrase);
+    m_advForm->addRow(QStringLiteral("Domain"), m_domain);
+    m_advForm->addRow(QString(), m_rdpClipboard);
+    m_advForm->addRow(QString(), m_rdpDrives);
+    m_advForm->addRow(QString(), m_rdpAudio);
+    m_advForm->addRow(QString(), m_rdpNla);
+    m_advForm->addRow(QString(), m_rdpIgnoreCert);
+
+    // Show only the fields relevant to the selected session type.
     auto updateVisibility = [this, form, keyRow] {
         const core::SessionType t = core::sessionTypeFromString(m_type->currentText());
         const bool net = (t != core::SessionType::Shell && t != core::SessionType::Serial);
@@ -70,10 +109,29 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         // The SSH gateway (jump host) applies to SSH-family sessions and to
         // RDP/VNC (routed through a local SSH tunnel).
         const bool gateway = key || t == core::SessionType::Rdp || t == core::SessionType::Vnc;
+        const bool ssh = (t == core::SessionType::Ssh);
+        const bool rdp = (t == core::SessionType::Rdp);
         form->setRowVisible(m_password, net && t != core::SessionType::Mosh);
         form->setRowVisible(keyRow, key);
         form->setRowVisible(m_passphrase, key);
         form->setRowVisible(m_gateway, gateway);
+
+        // Advanced rows.
+        m_advForm->setRowVisible(m_compression, ssh);
+        m_advForm->setRowVisible(m_x11, ssh);
+        m_advForm->setRowVisible(m_agent, ssh);
+        m_advForm->setRowVisible(m_agentForward, ssh);
+        m_advForm->setRowVisible(m_gwUser, gateway);
+        m_advForm->setRowVisible(m_gwPassword, gateway);
+        m_advForm->setRowVisible(m_gwPassphrase, gateway);
+        m_advForm->setRowVisible(m_domain, rdp);
+        m_advForm->setRowVisible(m_rdpClipboard, rdp);
+        m_advForm->setRowVisible(m_rdpDrives, rdp);
+        m_advForm->setRowVisible(m_rdpAudio, rdp);
+        m_advForm->setRowVisible(m_rdpNla, rdp);
+        m_advForm->setRowVisible(m_rdpIgnoreCert, rdp);
+        // Hide the whole group when nothing in it applies.
+        m_advanced->setVisible(ssh || rdp || gateway);
     };
     connect(m_type, &QComboBox::currentTextChanged, this, [updateVisibility](const QString&){ updateVisibility(); });
     updateVisibility();
@@ -84,6 +142,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(form);
+    layout->addWidget(m_advanced);
     layout->addWidget(buttons);
 }
 
@@ -117,6 +176,22 @@ void SessionDialog::setSession(const core::Session& s) {
     m_keyfile->setText(s.param("keyfile"));
     m_passphrase->setText(s.param("passphrase"));
     m_gateway->setText(s.param("gateway"));
+
+    // Advanced options. Default-on flags use a "!= 0" test so an absent param
+    // reads as enabled, matching the connection backends.
+    m_compression->setChecked(s.param("compression") == QLatin1String("1"));
+    m_x11->setChecked(s.param("x11", QStringLiteral("1")) != QLatin1String("0"));
+    m_agent->setChecked(s.param("agent") == QLatin1String("1"));
+    m_agentForward->setChecked(s.param("agentforward") == QLatin1String("1"));
+    m_gwUser->setText(s.param("gateway_user"));
+    m_gwPassword->setText(s.param("gateway_password"));
+    m_gwPassphrase->setText(s.param("gateway_passphrase"));
+    m_domain->setText(s.param("domain"));
+    m_rdpClipboard->setChecked(s.param("redirect_clipboard", QStringLiteral("1")) != QLatin1String("0"));
+    m_rdpDrives->setChecked(s.param("redirect_drives") == QLatin1String("1"));
+    m_rdpAudio->setChecked(s.param("redirect_audio") == QLatin1String("1"));
+    m_rdpNla->setChecked(s.param("nla", QStringLiteral("1")) != QLatin1String("0"));
+    m_rdpIgnoreCert->setChecked(s.param("ignorecert") == QLatin1String("1"));
 }
 
 core::Session SessionDialog::session() const {
@@ -130,6 +205,31 @@ core::Session SessionDialog::session() const {
     if (!m_keyfile->text().isEmpty())    f.insert("keyfile", m_keyfile->text());
     if (!m_passphrase->text().isEmpty()) f.insert("passphrase", m_passphrase->text());
     if (!m_gateway->text().isEmpty())    f.insert("gateway", m_gateway->text());
+
+    // Advanced options, written only for the protocols they apply to so saved
+    // sessions stay minimal. Default-off flags emit "1" only when enabled;
+    // default-on flags emit "0" only when disabled (absent → backend default).
+    const core::SessionType t = core::sessionTypeFromString(m_type->currentText());
+    const bool gateway = !m_gateway->text().isEmpty();
+    if (t == core::SessionType::Ssh) {
+        if (m_compression->isChecked())   f.insert("compression", "1");
+        if (!m_x11->isChecked())          f.insert("x11", "0");
+        if (m_agent->isChecked())         f.insert("agent", "1");
+        if (m_agentForward->isChecked())  f.insert("agentforward", "1");
+    }
+    if (gateway) {
+        if (!m_gwUser->text().isEmpty())       f.insert("gateway_user", m_gwUser->text());
+        if (!m_gwPassword->text().isEmpty())   f.insert("gateway_password", m_gwPassword->text());
+        if (!m_gwPassphrase->text().isEmpty()) f.insert("gateway_passphrase", m_gwPassphrase->text());
+    }
+    if (t == core::SessionType::Rdp) {
+        if (!m_domain->text().isEmpty())     f.insert("domain", m_domain->text());
+        if (!m_rdpClipboard->isChecked())    f.insert("redirect_clipboard", "0");
+        if (m_rdpDrives->isChecked())        f.insert("redirect_drives", "1");
+        if (m_rdpAudio->isChecked())         f.insert("redirect_audio", "1");
+        if (!m_rdpNla->isChecked())          f.insert("nla", "0");
+        if (m_rdpIgnoreCert->isChecked())    f.insert("ignorecert", "1");
+    }
     return core::SessionForm::toSession(f);
 }
 
