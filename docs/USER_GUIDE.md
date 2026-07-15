@@ -23,8 +23,9 @@ system administrator, or network engineer reaches for every day:
 - **SSH tunnels** (local, remote, dynamic/SOCKS) and jump-host support.
 - **MultiExec** — type once, broadcast to many panes at the same time.
 - An encrypted **credential vault** protected by a master password.
-- A set of built-in **network tools**: port scanner, light TFTP/FTP/HTTP servers,
-  text diff, and a remote system monitor.
+- A set of built-in **network tools**: port scanner, subnet sweep, packet capture,
+  key generation, image viewer, text/folder diff, a remote system monitor, and light
+  TFTP / HTTP / FTP / Telnet / CRON / NFS / SSH servers.
 - **X11 forwarding** that integrates your platform's X server.
 
 It is written in native **Qt + C/C++** and runs on **Windows, macOS, and Linux** from a
@@ -84,9 +85,10 @@ a new tab.
 
 ### The supported types
 
-The New Session dialog offers **SSH, Telnet, Serial, Mosh, RDP, VNC, and Shell**. A few
-additional protocols (**RSH, Rlogin, XDMCP**) are supported by the engine and are created
-by importing or by choosing the matching type where offered.
+The New Session dialog offers **14 types**: SSH, Telnet, Serial, Mosh, RSH, Rlogin,
+XDMCP, SFTP, FTP, S3, RDP, VNC, Browser, and a local Shell. The dialog is organized into
+**General / Advanced / Terminal** tabs, and only the fields relevant to the chosen type
+are shown.
 
 - **SSH** — the workhorse. Needs **Host**, **Username**, and optionally **Port**.
   Authentication is by password (supplied at connect time, typically from the credential
@@ -99,14 +101,23 @@ by importing or by choosing the matching type where offered.
 - **RSH** / **Rlogin** — legacy remote-shell protocols over a simple TCP stream, each with
   its startup handshake. Needs **Host** (and **Username** for the login handshake).
 - **XDMCP** — X Display Manager query bootstrap. Needs **Host**.
+- **XDMCP** — X Display Manager query bootstrap. Needs **Host**.
+- **SFTP** — a dedicated SFTP file-browser session (no terminal). Needs **Host**/**Username**.
+- **FTP** — a graphical FTP browser (passive mode). Needs **Host**.
+- **S3** — an Amazon S3 bucket browser (SigV4-signed). Needs the bucket and credentials.
 - **RDP** — Remote Desktop to Windows hosts. Needs **Host** (and **Username**); default port 3389.
-- **VNC** — remote framebuffer / screen sharing. Needs **Host**; default port 5900.
+  The **Advanced** tab exposes resolution, clipboard/drive/audio redirection, and NLA.
+- **VNC** — remote framebuffer / screen sharing. Needs **Host**; default port 5900. Fully
+  interactive (mouse + keyboard), with a **view-only** toggle in the Advanced tab.
+- **Browser** — an embedded web view with an address bar.
 - **Shell** — a **local** command shell on your own machine. No host/username needed; this
   is what the startup tab uses and what **New Shell** opens.
 
-Which fields matter varies by type: network protocols (SSH/Telnet/Mosh/RDP/VNC/RSH/Rlogin/
-XDMCP) care about **Host** and, where relevant, **Username** and **Port**; **Serial** cares
-about the device/port and line settings; **Shell** ignores host/port entirely.
+SSH's **Advanced** tab adds compression, X11 forwarding, agent auth/forwarding, a
+**keepalive** interval, a **remote command** to run instead of a login shell, and
+"keep the pane open after the command exits". Every session can also be filed into a
+**folder** and given a display **icon** (General tab), and terminal sessions can override
+the global font/scheme/scrollback/Backspace per bookmark (**Terminal** tab).
 
 ---
 
@@ -120,7 +131,20 @@ Each session opens in its own **tab**. Tabs are **closable** (the × on the tab,
 
 The terminal is driven by a real **VT100/VT220/xterm** emulator (built on libvterm), so
 full-screen curses apps — `vim`, `htop`, `tmux`, `less`, and friends — render correctly,
-including colors, cursor movement, and device-status replies.
+including 256-color **and true-color**, cursor movement, and device-status replies.
+Emoji and other astral-plane glyphs display intact, and you can **type CJK (Chinese /
+Japanese / Korean) via your input method** in both local and remote sessions.
+
+### More terminal features
+
+- **Split panes** — split a tab 2 vertical, 2 horizontal, or 2×2, from the View menu.
+- **Right-click menu** — copy / paste / select-all / clear scrollback / find.
+- **Find in scrollback** — `Cmd`/`Ctrl+Shift+F` opens a search bar over the history.
+- **Open URLs** — `Cmd`/`Ctrl`-click a link in the output to open it in your browser.
+- **Mouse reporting** — apps that request it (tmux, vim, htop) receive mouse events.
+- **Bracketed paste** and an optional **paste delay** for slow remotes; a multi-line paste
+  warns before sending.
+- **Session logging** — mirror a session's output to a file.
 
 ### Color schemes
 
@@ -134,6 +158,9 @@ Three schemes ship in the box, selectable in **Settings → Terminal → Color s
 
 Set the **Font** family and **Font size** (6–72 pt) in **Settings → Terminal**. You can
 also configure the **Scrollback** buffer (number of lines retained, up to 1,000,000).
+Powerline / Nerd Font prompt glyphs fall back automatically to an installed Nerd Font, so
+themed shell prompts render without tofu boxes. Any of these can be **overridden per
+session** in the New Session dialog's **Terminal** tab.
 
 ---
 
@@ -152,18 +179,26 @@ MultiExec has **no cap** on how many panes participate.
 
 ---
 
-## 6. SFTP file browser
+## 6. SFTP & FTP file browsers
 
-Every SSH session can carry a graphical **SFTP** channel over the same authenticated
-connection — no second login. With SFTP you can:
+Every SSH session opens a graphical **SFTP** side panel over the same authenticated
+connection — no second login — and FTP sessions get the same panel over FTP. The browser
+docks on the left (matching MobaXterm) and lets you:
 
-- **Browse** remote directories (entries are listed and sorted for you).
-- **Download** files from the remote host to your machine.
-- **Upload** files from your machine to the remote host.
+- **Browse** remote directories with a Name / Size / **Modified** column and sortable
+  headers; jump to **Home** or up a level.
+- **Download / upload** by button *or* **drag-and-drop** — drop OS files onto the panel to
+  upload, or drag a remote file out to download it. Whole folders transfer **recursively**
+  with a cancelable progress bar.
+- **Edit remote files in place** — double-click a file to open it in the built-in editor;
+  saving **re-uploads automatically**.
+- **Manage** — right-click for chmod / rename / delete / new folder.
+- **Follow the terminal's folder** — when enabled, the browser re-homes to whatever
+  directory the terminal is currently in (via OSC 7).
 
-Because SFTP shares the SSH transport, it becomes available once your SSH session is
-connected and authenticated. Live browsing requires a real remote `sshd`; the underlying
-path-handling and entry modelling are independently verified.
+The panel **closes automatically when its session's tab is closed**. Live browsing
+requires a real remote endpoint; the path-handling, listing, and recursive-transfer logic
+are independently unit-tested (SFTP against a real `sshd`; FTP against an embedded server).
 
 ---
 
@@ -291,17 +326,20 @@ of them carry the runtime caps that MobaXterm Home imposes.
 
 - **Port scanner** — TCP-connect scanner. Check a single host/port, or scan an inclusive
   **port range**, receiving each open port as it's found plus a final open-count.
-- **TFTP server** — a read-only **TFTP** (RFC 1350) server over UDP that serves files from
-  a chosen root directory. It handles read requests (RRQ) and block/ACK; write requests are
-  refused.
-- **FTP server** — a small **FTP** (RFC 959 subset) control server with anonymous read
-  access — handy for quick file serving (`USER`/`PASS`/`SYST`/`PWD`/`TYPE`/`QUIT`).
-- **HTTP server** — a minimal **HTTP GET** file server that shares files from a directory.
-  Intentionally tiny — great for a quick download, not a general web server.
-- **Text diff** — a line-level, LCS-based diff (MobaTextDiff-style) that reports Equal /
-  Added / Removed lines between two texts.
-- **Remote monitor** — parses remote system stats (CPU from `/proc/stat`, memory from
-  `/proc/meminfo`) gathered over SSH into usage numbers for a monitoring status readout.
+- **Subnet sweep** — ping/probe a CIDR range to find live hosts.
+- **Packet capture** — a `libpcap`-backed capture with a built-in packet decoder (needs
+  capture permission on the interface).
+- **Key generation** — generate and fingerprint SSH keys (MobaKeyGen-style).
+- **Image viewer** — a full-screen picture viewer with next/previous navigation.
+- **Text & folder diff** — a line-level, LCS-based text diff plus a recursive folder
+  comparison (MobaTextDiff / MobaFoldersDiff-style).
+- **Colour-scheme editor** — a graphical ANSI-palette / foreground-background editor.
+- **Light servers** (toolbar → Servers), each without MobaXterm Home's runtime cap:
+  **TFTP** (RFC 1350), **HTTP GET** file server, **FTP** (RFC 959, with a full passive
+  data channel), **Telnet**, **CRON** (5-field expression scheduler), **NFSv3
+  (read/write)**, and an **SSH/SFTP** server (password auth + PTY shell).
+- **Remote monitor** — a status bar under SSH terminals showing live CPU / RAM / NET
+  parsed from the remote host.
 
 ---
 
@@ -326,21 +364,31 @@ server**, then run a GUI program in an SSH session — it appears as a local win
 macXterm is honest about what needs a live peer versus what works entirely on your machine.
 
 **Fully working locally (no server needed):**
-- Local **Shell** tabs and the VT100/xterm terminal emulation
-- Color schemes, fonts, scrollback, and Settings
-- The **credential vault** (AES-256-GCM + Argon2id/scrypt)
-- **MultiExec** broadcast logic
-- **Text diff**, **port scanner**, and the light **TFTP/FTP/HTTP** servers
-- OpenSSH **config import**
+- Local **Shell** tabs, VT100/xterm emulation (true-color, emoji, CJK input), split panes
+- Colour schemes, fonts (with Nerd Font fallback), scrollback, per-session overrides, Settings
+- The **credential vault** (AES-256-GCM + Argon2id/scrypt) and folder/icon session tree
+- **MultiExec** broadcast; **macros** and **shortcuts**
+- **Text/folder diff**, **image viewer**, **port scanner**, **subnet sweep**, and the light
+  **TFTP / HTTP / FTP / Telnet / CRON / NFS / SSH** servers
+- OpenSSH `~/.ssh/config` and `MobaXterm.ini` **import**
 - Tunnel and session **validation** (port-collision and field checks)
 
 **Needs a live remote (or hardware) to exercise end to end:**
 - **SSH**, and the **SFTP** browser, **tunnels**, and **X11 forwarding** that ride on it —
   these need a real `sshd`
-- **Telnet, Mosh, RSH, Rlogin, XDMCP** — need a reachable server
+- **Telnet, Mosh, RSH, Rlogin** — need a reachable server
+- **FTP / S3** — need a reachable FTP server / S3 bucket
 - **Serial** — needs a real serial device
 - **RDP / VNC** — need a remote desktop / VNC host
 - **Remote monitor** — needs an SSH host to sample
+- **Packet capture** — needs capture permission on a live interface
+
+**Known gaps.** **XDMCP** completes the discovery/negotiation handshake but does not yet
+redirect the accepted session to a local X server (needs a real display manager);
+**VNC** decodes Raw/CopyRect/RRE/Hextile/ZRLE (Tight is not yet implemented); and on
+**Windows** the ConPTY local shell is incomplete. Windows-only MobaXterm features (WSL,
+Cygwin shell extensions, MobApt, PuTTY-registry import) are intentionally out of scope on
+macOS/Linux by design.
 
 **No artificial limits.** Unlike MobaXterm Home, macXterm places **no cap** on the number
 of saved sessions, tunnels, or macros, and no cap on MultiExec panes or the built-in

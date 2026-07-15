@@ -304,9 +304,10 @@ flowchart LR
 | **Telnet** | `TelnetConnection` + `TelnetProtocol` | `TelnetProtocol` is a stateless IAC option-negotiation processor (streams across chunks); accepts SGA / server-ECHO, refuses the rest. |
 | **Serial** | `SerialConnection` (`QSerialPort`) | `parseConfig()` derives baud/data-bits/parity/stop-bits/flow from session params (default 9600 8N1). |
 | **Mosh** | `MoshConnection` | GPL — invoked as a **separate process** (`mosh` binary), never linked. `buildArgs()` composes the argv. |
-| **RSH / Rlogin / XDMCP** | `SimpleTcpConnection` | Shared TCP-stream client; Rlogin sends the RFC 1282 NUL-delimited startup handshake. |
+| **RSH / Rlogin / XDMCP** | `SimpleTcpConnection` (+ `XdmcpConnection`) | Shared TCP-stream client: Rlogin sends the RFC 1282 NUL-delimited handshake, RSH the rcmd handshake, both stripping the leading status-ack byte. XDMCP has its own UDP `XdmcpConnection` state machine (see §8). |
+| **FTP** | `FtpClient` (`IRemoteFs`) | Passive-mode FTP browser backend behind the same remote-filesystem interface as SFTP; drives the graphical FTP panel. |
 | **RDP** | `RdpConnection` (FreeRDP 3) | Real FreeRDP context: `freerdp_new` → settings → `freerdp_connect` → `gdi_init(BGRA32)`. `currentFrame()` wraps the gdi framebuffer as an ARGB `QImage`; `poll()` pumps the FreeRDP event loop. Built only when FreeRDP is present (`MACXTERM_HAVE_FREERDP`), otherwise a scaffold. |
-| **VNC** | `VncConnection` + `RfbProtocol` | From-scratch **MIT** RFB 3.8 client (no GPL libvncclient). Handshake state machine (Version → Security → SecurityResult → ClientInit → ServerInit) + `FramebufferUpdate` parsing + RAW-encoding pixel decode to ARGB. |
+| **VNC** | `VncConnection` + `RfbProtocol` | From-scratch **MIT** RFB 3.8 client (no GPL libvncclient). Handshake state machine (Version → Security → SecurityResult → ClientInit → ServerInit) + `FramebufferUpdate` parsing + **Raw / CopyRect / RRE / Hextile / ZRLE** decode to ARGB, plus interactive `PointerEvent`/`KeyEvent` injection. See §8. |
 
 ### Telnet IAC negotiation
 
@@ -318,11 +319,24 @@ IAC responses. This pure processor is unit-tested independently of the socket.
 ### VNC / RFB
 
 `RfbProtocol` provides pure codecs — `parseVersion`/`formatVersion`,
-`parseServerInit`, `parseFramebufferUpdate`, `decodeRawRect` — all unit-tested.
-`VncConnection` drives them over a `QTcpSocket` with a small state machine and
-emits `rectDecoded(x,y,w,h,pixels)` and `serverReady(w,h,name)`. It is validated
-end-to-end against an in-test mock RFB server and against a real `sfreerdp`/VNC
-fixture.
+`parseServerInit`, `parseFramebufferUpdate`, and per-encoding decoders for
+**Raw, CopyRect, RRE, Hextile, and ZRLE** (`decodeRect` / `decodeZRLERect`) —
+all unit-tested with byte-exact fixtures. ZRLE keeps a persistent zlib inflate
+stream (`RfbZlibStream`) across rectangles, since the compressed framebuffer
+stream is continuous. `VncConnection` advertises the encodings via
+`SetEncodings`, drives them over a `QTcpSocket` state machine, and emits
+`rectDecoded(...)`, `copyRect(...)`, and `serverReady(...)`; it also injects
+`PointerEvent`/`KeyEvent` for interactive mouse+keyboard (view-only aware). It
+is validated end-to-end against an in-test mock RFB server, plus the ZRLE
+decoder is verified with a symmetric zlib deflater (no live server needed).
+
+### XDMCP
+
+`XdmcpProtocol` encodes/parses the discovery + negotiation packets (Query,
+Willing, Request, Accept, plus rejection opcodes), and `XdmcpConnection` drives
+the Query→Request→Accept UDP state machine — both unit-tested, including a
+loopback "fake display manager" fixture. Redirecting the accepted session to a
+local X server for display is deferred (needs a real display manager).
 
 ---
 
@@ -502,7 +516,9 @@ CMake (≥ 3.21). Two targets: the `macxterm_core` static library and the
 | OpenSSL 3 | AES-256-GCM + Argon2id/scrypt | Apache-2.0 | dynamic |
 | `libvterm` | terminal emulation | MIT | dynamic |
 | `libssh2` | SSH / SFTP / tunnels | BSD-3 | dynamic |
+| `zlib` | VNC ZRLE inflate | zlib | dynamic |
 | FreeRDP 3 | real RDP (optional) | Apache-2.0 | dynamic, autodetected |
+| `libpcap` | packet capture (optional) | BSD | dynamic, autodetected |
 
 Argon2 comes from OpenSSL's `EVP_KDF` — there is **no** separate `argon2`
 dependency. Qt is linked **dynamically** to satisfy LGPL under an MIT project;
@@ -531,7 +547,8 @@ A desktop test pyramid wired into CTest:
 |-------|-----|----------|
 | **Unit** | `QTEST_APPLESS_MAIN`, pure logic | session model, vault crypto, VT engine, IAC negotiation, RFB codecs, tunnels, diff, path/host-key helpers |
 | **Integration (in-process)** | `QTEST_GUILESS_MAIN` + real PTY/loopback | local shell over `forkpty`, serial over a real pty pair, port scanner, tunnel forwarder |
-| **Mock-server e2e** | in-test fixture servers over loopback | VNC vs. a mock RFB server, Telnet vs. a mock IAC server, HTTP/FTP/TFTP servers |
+| **Mock-server e2e** | in-test fixture servers over loopback | VNC vs. a mock RFB server, Telnet vs. a mock IAC server, HTTP/FTP/TFTP servers, FTP browser vs. an embedded FTP server, XDMCP vs. a loopback "fake display manager" |
+| **Symmetric codec** | encode with the same library the decoder reverses | VNC **ZRLE** decoded against tile data compressed by zlib `deflate` (no live server) |
 | **Guarded-live e2e** | real servers deployed by scripts; `QSKIP` when absent | SSH vs. a real `sshd` (`scripts/live-sshd.sh`), RDP vs. `sfreerdp-server` (`scripts/rdp-fixture.sh`) |
 
 Discipline: guarded-live tests `QSKIP` with a reason when no endpoint is
@@ -540,7 +557,7 @@ validated on macOS and via a real Ubuntu container (`scripts/linux-build.sh`); t
 CI matrix (`.github/workflows/ci.yml`) covers Windows/macOS/Linux plus a MinGW
 Windows cross-compile and a Dockerized live-SSH job.
 
-Current suite: **40 test binaries, 100% green on macOS and Linux.**
+Current suite: **71 test binaries, 100% green on macOS and Linux.**
 
 ---
 
@@ -580,34 +597,41 @@ isolated behind a process boundary without shipping its binary.
 
 ## 20. Implementation status
 
-macXterm builds and passes its full suite on macOS and Linux. Feature depth by
-area:
+macXterm builds and passes its **full 71-suite test set** on macOS and Linux
+(`ctest --test-dir build`). Feature depth by area:
 
 **Fully implemented, tested, and runnable**
-- Terminal (libvterm VT engine, screen buffer, color schemes), tabbed UI, MultiExec broadcast.
-- Local shell over a PTY; SSH (libssh2) incl. a live end-to-end test against a real `sshd`.
-- Telnet (with a mock-server e2e), Serial (tested over a real pty pair), Mosh (subprocess arg build).
-- VNC — full RFB 3.8 client, end-to-end against a mock and real server.
-- RDP — real FreeRDP connect + TLS handshake + GDI framebuffer, end-to-end against `sfreerdp-server`.
-- Credential vault (AES-GCM + Argon2id/scrypt), SQLite store + known-hosts, `ssh_config` import.
-- SSH tunnel data path (loopback e2e), tunnel model, MultiExec, macros, shortcuts, CLI parsing.
-- Tools: port scanner, TFTP/FTP/HTTP servers, remote-monitor parsers, text diff, host-key fingerprint (all tested over loopback / with fixtures).
-- GUI dialogs: Session, Tunnel, Settings, Vault; RDP/VNC render surface.
+- Terminal (libvterm VT engine, screen buffer, colour schemes), 256-color + **true-color**, **astral-plane / emoji glyphs**, **CJK input-method (IME) typing**, syntax highlighting, session logging, bracketed paste, mouse reporting (1000/1002/1003 + SGR 1006), scrollback search, `Ctrl`/`Cmd`-click URL open, resize reflow.
+- Tabbed UI with drag-reorder, detach/reattach, **2/2/4 split panes**, MultiExec broadcast, and an **in-window menu bar** (macOS `setNativeMenuBar(false)`).
+- Per-session terminal overrides (font / scheme / scrollback / Backspace) layered over global settings.
+- Local shell over a PTY; SSH (libssh2) incl. a live end-to-end test against a real `sshd`; SSH keepalive, remote-command, stay-open, jump host, agent, X11 forwarding, compression.
+- Telnet (mock-server e2e), **RSH/Rlogin** (real rcmd/RFC-1282 handshake + status-ack), Serial (real pty pair), Mosh (subprocess arg build with UDP port-range + predict).
+- **VNC** — from-scratch RFB 3.8 client with Raw / CopyRect / RRE / Hextile / **ZRLE** decoding and interactive mouse+keyboard input; end-to-end against a mock and real server.
+- **RDP** — real FreeRDP connect + TLS handshake + GDI framebuffer + interactive input + resolution/redirection flags, end-to-end against `sfreerdp-server`.
+- **XDMCP** — Query→Willing→Request→Accept handshake codec + UDP state machine (loopback-tested; see below for the display-redirection gap).
+- Graphical **SFTP & FTP browsers** — drag-and-drop, follow-terminal-folder, remote edit-and-resave, recursive folder transfer with cancelable progress, date column / sort / Home.
+- Credential vault (AES-GCM + Argon2id/scrypt), SQLite store + known-hosts, **folder/icon session tree**, `ssh_config` & `MobaXterm.ini` import.
+- SSH tunnels — local/remote/**dynamic (SOCKS)** (loopback e2e) + jump-host routing for RDP/VNC; macros, shortcuts, CLI parsing.
+- Built-in servers: TFTP / HTTP / FTP / Telnet / CRON / **NFSv3 (read/write)** / SSH·SFTP (all tested over loopback / with fixtures).
+- Tools: port scanner, subnet sweep, **packet capture (libpcap)**, keygen, image viewer, text & folder diff, remote CPU/RAM monitor.
+- Embedded **Browser** session (QWebEngineView).
 
 **Implemented in-source; validated further with live infrastructure**
-- SFTP browser back-end (`libssh2` readdir/download/upload) — compiles and is
-  ready; full exercise needs a live SFTP endpoint.
 - SSH channels' live SFTP/tunnel wiring against production servers.
-- Windows build — ConPTY + Winsock code written; Windows-specific code
-  cross-compiles to a PE binary; the full Windows GUI build is validated by the
-  maintainer on Windows.
 
-**Roadmap (not yet implemented)**
-- X11 server *bundling* for turnkey forwarding (currently integrates a
-  user-provided X server).
-- FTP/S3/browser session types, richer SFTP UI, remote-file edit-and-save.
-- Astral-plane (>BMP) glyphs (widen `Cell` to `QString`).
-- OS keystore integration behind `IKeystore`.
+**Deferred — needs external infrastructure to verify end-to-end**
+- **XDMCP display redirection**: the handshake reaches `Accept` (with a session id);
+  launching a local X server to render the remote desktop after that needs a real
+  display manager and is not yet wired.
+- **VNC Tight encoding** (another zlib-based codec; ZRLE already covers most servers).
+- **X11 server *bundling*** for turnkey forwarding — macXterm integrates a
+  user-provided X server (XQuartz / VcXsrv) instead of shipping X.Org.
+- **Windows ConPTY local shell** — the `_WIN32` PTY path is a stub; other subsystems
+  build on Windows but the local shell there is incomplete.
+
+**Out of scope (Windows-only)**
+- WSL sessions, the Cygwin `/drives`·`/registry`·`cygpath` extensions, the MobApt
+  package manager, PuTTY-registry/WinSCP import, and the Windows shell/protocol handlers.
 
 ---
 
@@ -616,11 +640,11 @@ area:
 | Phase | Focus |
 |-------|-------|
 | ✅ Foundation | Terminal core, local shell, SSH, session model, vault, persistence. |
-| ✅ SSH ecosystem | SFTP back-end, tunnels, MultiExec, imports. |
-| ✅ Multi-protocol | Telnet, Serial, Mosh, RSH/Rlogin/XDMCP, VNC, RDP. |
-| ✅ Tools & servers | Scanner, TFTP/FTP/HTTP, diff, monitor, keygen/fingerprint. |
-| ▢ SFTP/X11 depth | Graphical SFTP panel with drag-drop & follow-folder; bundled X server. |
-| ▢ Polish | Split panes in GUI, detachable tabs, transparency/DPI, full settings surface, S3/FTP/browser sessions, astral glyphs, OS keystore. |
+| ✅ SSH ecosystem | SFTP/FTP browsers (drag-drop, follow-folder, edit-and-resave), tunnels, MultiExec, imports. |
+| ✅ Multi-protocol | Telnet, Serial, Mosh, RSH/Rlogin (real handshakes), XDMCP (handshake), VNC (Raw→ZRLE), RDP. |
+| ✅ Tools & servers | Scanner, subnet, packet capture, TFTP/HTTP/FTP/Telnet/CRON/NFS/SSH servers, diff, monitor, keygen. |
+| ✅ Terminal & UI polish | Split panes, detachable tabs, per-session settings, folders/icons, in-window menu, true-color, astral glyphs, IME, mouse reporting, scrollback search. |
+| ▢ Remaining protocol depth | XDMCP display redirection, VNC Tight; bundled X server; Windows ConPTY shell. |
 | ▢ Packaging | Signed/notarized installers per platform; auto-update. |
 
 ---

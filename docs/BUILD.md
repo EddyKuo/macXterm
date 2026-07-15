@@ -14,7 +14,9 @@ All required dependencies are permissively licensed (MIT-compatible).
 | OpenSSL 3 | AES-256-GCM + Argon2id/scrypt (credential vault) | Apache-2.0 | ✅ |
 | libvterm | VT100/VT220/xterm terminal emulation | MIT | ✅ |
 | libssh2 | SSH / SFTP / tunnels | BSD-3 | ✅ |
+| zlib | VNC ZRLE inflate | zlib | ✅ (usually system-provided) |
 | FreeRDP 3 | real RDP protocol (autodetected) | Apache-2.0 | optional |
+| libpcap | packet capture (autodetected) | BSD | optional |
 
 > **Notes.** Argon2id comes from OpenSSL 3.2+'s `EVP_KDF` — there is **no**
 > separate `argon2` dependency, and older OpenSSL (3.0/3.1, e.g. Ubuntu 24.04)
@@ -26,16 +28,18 @@ All required dependencies are permissively licensed (MIT-compatible).
 ### macOS (Homebrew)
 
 ```sh
-brew install qt openssl@3 libvterm libssh2 cmake
+brew install qt openssl@3 libvterm libssh2 zlib cmake
 brew install freerdp        # optional — enables real RDP
 ```
+(zlib ships with macOS; the Homebrew formula is only needed if CMake can't find
+the system one.)
 
 ### Linux (Debian / Ubuntu)
 
 ```sh
 sudo apt install qt6-base-dev libqt6serialport6-dev libssl-dev \
-                 libvterm-dev libssh2-1-dev cmake ninja-build
-sudo apt install libfreerdp-dev   # optional — enables real RDP
+                 libvterm-dev libssh2-1-dev zlib1g-dev cmake ninja-build
+sudo apt install libfreerdp-dev libpcap-dev   # optional — real RDP / packet capture
 ```
 
 ### Windows
