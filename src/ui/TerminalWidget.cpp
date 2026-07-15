@@ -1,5 +1,6 @@
 #include "ui/TerminalWidget.h"
 #include <QPainter>
+#include <QStringList>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -23,6 +24,36 @@
 
 namespace macxterm::ui {
 
+// Fallback font families appended after the primary monospace face so Powerline
+// / Nerd Font icon glyphs (common in zsh/oh-my-posh prompts) and CJK text render
+// instead of tofu boxes. Names must match the INSTALLED family exactly — e.g. the
+// Meslo Nerd Font registers as "MesloLGS Nerd Font", not "MesloLGS NF". Families
+// Qt can't find are silently skipped, so listing several is safe.
+static QStringList nerdFallbackFamilies() {
+#if defined(Q_OS_WIN)
+    return {"CaskaydiaCove Nerd Font", "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono",
+            "Symbols Nerd Font", "Microsoft YaHei Mono", "Microsoft JhengHei", "NSimSun"};
+#elif defined(Q_OS_MACOS)
+    return {"MesloLGS Nerd Font", "MesloLGM Nerd Font", "MesloLGL Nerd Font",
+            "JetBrainsMono Nerd Font", "Hack Nerd Font", "Symbols Nerd Font Mono",
+            "Symbols Nerd Font", "PingFang SC", "Hiragino Sans", "Apple Color Emoji"};
+#else
+    return {"JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", "Symbols Nerd Font",
+            "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "Noto Color Emoji"};
+#endif
+}
+
+// Build a families list: the requested primary face first, then the fallback
+// chain (de-duplicated). Guarantees the Nerd Font/CJK fallback survives no matter
+// how the incoming QFont was constructed.
+static QStringList withFallback(const QString& primary) {
+    QStringList fams;
+    if (!primary.isEmpty()) fams << primary;
+    for (const QString& fb : nerdFallbackFamilies())
+        if (!fams.contains(fb)) fams << fb;
+    return fams;
+}
+
 TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(false);
@@ -34,15 +65,13 @@ TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
     QFont f;
     f.setStyleHint(QFont::Monospace);
 #if defined(Q_OS_WIN)
-    f.setFamilies({"Consolas", "CaskaydiaCove Nerd Font", "JetBrainsMono Nerd Font",
-                   "Symbols Nerd Font", "Microsoft YaHei Mono", "Microsoft JhengHei", "NSimSun"});
+    const QString primary = QStringLiteral("Consolas");
 #elif defined(Q_OS_MACOS)
-    f.setFamilies({"Menlo", "MesloLGS NF", "JetBrainsMono Nerd Font",
-                   "Symbols Nerd Font", "PingFang SC", "Hiragino Sans"});
+    const QString primary = QStringLiteral("Menlo");
 #else
-    f.setFamilies({"DejaVu Sans Mono", "JetBrainsMono Nerd Font", "Symbols Nerd Font",
-                   "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "monospace"});
+    const QString primary = QStringLiteral("DejaVu Sans Mono");
 #endif
+    f.setFamilies(withFallback(primary));
     f.setFixedPitch(true);
     f.setPointSize(12);
     setFont(f);
@@ -69,6 +98,12 @@ void TerminalWidget::updateCellMetrics() {
 void TerminalWidget::setTerminalFont(const QFont& fontIn) {
     QFont f = fontIn;
     f.setFixedPitch(true);
+    // Re-attach the Nerd Font / CJK fallback chain. Settings build the font with
+    // setFamily()/a single family, which would otherwise drop the fallback and
+    // bring the tofu boxes back for Powerline prompt glyphs.
+    const QStringList inFams = fontIn.families();
+    const QString primary = !inFams.isEmpty() ? inFams.first() : fontIn.family();
+    f.setFamilies(withFallback(primary));
     setFont(f);
     updateCellMetrics();
     recomputeGrid();

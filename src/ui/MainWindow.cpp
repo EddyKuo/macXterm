@@ -1047,7 +1047,10 @@ void MainWindow::applySettings(TerminalWidget* term) {
     const core::TermConfig cfg = core::resolveTermConfig(m_settings, params);
     term->setColorScheme(term::ColorScheme::byName(cfg.colorScheme));
     QFont f = term->font();
-    if (!cfg.fontFamily.isEmpty()) f.setFamily(cfg.fontFamily);
+    // Set the primary family as a single-element list so TerminalWidget can read
+    // it back and re-attach the Nerd Font/CJK fallback chain around it (using
+    // setFamily() here would leave a stale families() list).
+    if (!cfg.fontFamily.isEmpty()) f.setFamilies({cfg.fontFamily});
     f.setPointSize(cfg.fontSize);
     term->setTerminalFont(f);
     term->setSyntaxHighlighting(m_syntaxHighlight);
