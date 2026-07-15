@@ -34,6 +34,13 @@ public:
     // Scrollback: lines that have scrolled off the top of the screen, oldest
     // first. Index 0 is the oldest retained line.
     int scrollbackCount() const { return m_scrollback.size(); }
+    // Cap on retained scrolled-off lines. Trims immediately if the new cap is
+    // smaller than the current backlog. A value <= 0 disables scrollback.
+    void setScrollbackMax(int lines) {
+        m_scrollbackMax = lines < 0 ? 0 : lines;
+        while (m_scrollback.size() > m_scrollbackMax) m_scrollback.removeFirst();
+    }
+    int scrollbackMax() const { return m_scrollbackMax; }
     const QVector<Cell>& scrollbackLine(int i) const { return m_scrollback.at(i); }
 
 signals:

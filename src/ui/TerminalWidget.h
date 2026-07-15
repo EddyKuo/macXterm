@@ -63,6 +63,7 @@ public:
     // Paste delay: when > 0, a multi-line paste is delivered line-by-line with
     // this many milliseconds between lines (avoids overrunning slow remotes).
     void setPasteDelay(int ms) { m_pasteDelayMs = ms; }
+    void setScrollbackLines(int n) { m_vt.setScrollbackMax(n); }
     int pasteDelay() const { return m_pasteDelayMs; }
 
     QSize sizeHint() const override { return {640, 400}; }

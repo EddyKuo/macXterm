@@ -996,6 +996,7 @@ void MainWindow::applySettings(TerminalWidget* term) {
     term->setTerminalFont(f);
     term->setSyntaxHighlighting(m_syntaxHighlight);
     term->setPasteDelay(m_pasteDelay);
+    term->setScrollbackLines(m_settings.scrollbackLines());
 }
 
 } // namespace macxterm::ui

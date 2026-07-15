@@ -56,6 +56,31 @@ private slots:
         vt.input("ok");
         QVERIFY(vt.screenText().startsWith("ok"));
     }
+
+    void scrollbackCapIsEnforced() {
+        VtEngine vt(3, 20);
+        vt.setScrollbackMax(5);
+        QCOMPARE(vt.scrollbackMax(), 5);
+        // Emit far more lines than the screen + cap can hold.
+        for (int i = 0; i < 40; ++i) vt.input(QByteArray("row\r\n"));
+        QVERIFY(vt.scrollbackCount() <= 5);
+    }
+
+    void shrinkingScrollbackTrimsBacklog() {
+        VtEngine vt(3, 20);
+        vt.setScrollbackMax(50);
+        for (int i = 0; i < 40; ++i) vt.input(QByteArray("row\r\n"));
+        QVERIFY(vt.scrollbackCount() > 3);
+        vt.setScrollbackMax(3);
+        QCOMPARE(vt.scrollbackCount(), 3);
+    }
+
+    void zeroScrollbackKeepsNothing() {
+        VtEngine vt(3, 20);
+        vt.setScrollbackMax(0);
+        for (int i = 0; i < 20; ++i) vt.input(QByteArray("row\r\n"));
+        QCOMPARE(vt.scrollbackCount(), 0);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestVtEngine)
