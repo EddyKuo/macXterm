@@ -21,8 +21,14 @@ public:
     Capabilities capabilities() const override { return {false, false, false, false}; }
 
     // Pure: the initial bytes sent on connect for this protocol (e.g. Rlogin's
-    // NUL-delimited "\0localuser\0remoteuser\0term/speed\0"). Exposed for tests.
+    // NUL-delimited "\0localuser\0remoteuser\0term/speed\0", or Rsh's
+    // "stderrport\0localuser\0remoteuser\0command\0"). Exposed for tests.
     static QByteArray startupHandshake(core::SessionType type, const core::Session& session);
+
+    // Whether this protocol begins with a server-sent one-byte status ack that
+    // must be swallowed rather than shown in the terminal (Rlogin and Rsh both
+    // reply with a leading 0x00 = success). Pure/testable.
+    static bool expectsAckByte(core::SessionType type);
 
 private slots:
     void onReadyRead();
@@ -30,6 +36,7 @@ private slots:
 private:
     core::SessionType m_type;
     QTcpSocket* m_sock = nullptr;
+    bool m_awaitingAck = false;   // strip the first server byte (Rlogin/Rsh status)
 };
 
 } // namespace macxterm::connect

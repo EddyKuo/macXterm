@@ -21,10 +21,24 @@ private slots:
         QCOMPARE(h.at(0), '\0');
     }
 
-    void rshHasNoHandshake() {
+    void rshHandshakeFormat() {
         core::Session s("r", core::SessionType::Rsh);
-        QVERIFY(connect::SimpleTcpConnection::startupHandshake(
-                    core::SessionType::Rsh, s).isEmpty());
+        s.setUsername("bob");
+        s.setParam("remotecommand", "uptime");
+        const QByteArray h = connect::SimpleTcpConnection::startupHandshake(
+            core::SessionType::Rsh, s);
+        // stderr-port "0" \0 local \0 remote \0 command \0  -> 4 NUL separators.
+        QCOMPARE(h.count('\0'), 4);
+        QVERIFY(h.startsWith("0"));               // no separate stderr channel
+        QVERIFY(h.contains(QByteArray("bob")));
+        QVERIFY(h.contains(QByteArray("uptime")));
+        QVERIFY(h.endsWith('\0'));
+    }
+
+    void ackByteOnlyForRloginAndRsh() {
+        QVERIFY(connect::SimpleTcpConnection::expectsAckByte(core::SessionType::Rlogin));
+        QVERIFY(connect::SimpleTcpConnection::expectsAckByte(core::SessionType::Rsh));
+        QVERIFY(!connect::SimpleTcpConnection::expectsAckByte(core::SessionType::Xdmcp));
     }
 
     void xdmcpHasQueryMarker() {
@@ -45,7 +59,8 @@ private slots:
             QTcpSocket* c = server.nextPendingConnection();
             QObject::connect(c, &QTcpSocket::readyRead, c, [c] {
                 c->readAll();                    // consume the handshake / input
-                c->write("server-hello");        // and reply to the client
+                c->write(QByteArray(1, '\0'));   // Rlogin status ack (success)
+                c->write("server-hello");        // then the actual reply
                 c->flush();
             });
         });
@@ -65,7 +80,8 @@ private slots:
         // for the server's reply — proving connect → send → read all fire. Fall
         // through after the timeout regardless so send()/disconnect still run.
         QTRY_VERIFY_WITH_TIMEOUT(!clientGot.isEmpty(), 5000);
-        QVERIFY(clientGot.contains("server-hello"));
+        // The leading status ack byte must be swallowed, not surfaced.
+        QCOMPARE(clientGot, QByteArray("server-hello"));
 
         conn.send("more-input");                 // exercise send() post-connect
         conn.disconnectSession();
