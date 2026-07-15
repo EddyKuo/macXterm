@@ -60,6 +60,16 @@ private:
     QCheckBox* m_rdpIgnoreCert = nullptr; // param "ignorecert"
     // VNC
     QCheckBox* m_vncViewOnly = nullptr;   // param "viewonly"
+
+    // Terminal, per-session overrides of the global appearance/behaviour
+    // (params "term.font"/"term.fontSize"/"term.scheme"/"term.scrollback"/
+    // "term.backspace"; blank/sentinel = inherit the global Settings).
+    QGroupBox*  m_terminal = nullptr;
+    QLineEdit*  m_termFont = nullptr;
+    QSpinBox*   m_termFontSize = nullptr;   // 0 = inherit
+    QComboBox*  m_termScheme = nullptr;     // "" = inherit
+    QSpinBox*   m_termScrollback = nullptr; // -1 = inherit, 0 = disabled
+    QComboBox*  m_termBackspace = nullptr;  // DEL (default) | Control-H
 };
 
 } // namespace macxterm::ui

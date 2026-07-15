@@ -35,6 +35,7 @@
 #include <QListWidget>
 #include <QVBoxLayout>
 #include "core/Settings.h"
+#include "core/TerminalConfig.h"
 #include "core/SshConfigImporter.h"
 #include "core/IniStore.h"
 #include "x11/X11Server.h"
@@ -693,8 +694,8 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
         default:                        conn = new connect::LocalShellConnection(term); break;
     }
     term->attach(conn);
+    m_tabSessions.insert(term, session);   // before applySettings so per-session overrides apply
     applySettings(term);
-    m_tabSessions.insert(term, session);
     if (m_multiExec)
         term->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
 
@@ -1014,15 +1015,19 @@ void MainWindow::saveSettings() {
 
 void MainWindow::applySettings(TerminalWidget* term) {
     if (!term) return;
-    term->setColorScheme(term::ColorScheme::byName(m_settings.colorScheme()));
+    // Layer this pane's per-session overrides (if any) on top of the globals.
+    const QVariantMap params = m_tabSessions.contains(term)
+                                   ? m_tabSessions.value(term).params() : QVariantMap{};
+    const core::TermConfig cfg = core::resolveTermConfig(m_settings, params);
+    term->setColorScheme(term::ColorScheme::byName(cfg.colorScheme));
     QFont f = term->font();
-    const QString fam = m_settings.fontFamily();
-    if (!fam.isEmpty()) f.setFamily(fam);
-    f.setPointSize(m_settings.fontSize());
+    if (!cfg.fontFamily.isEmpty()) f.setFamily(cfg.fontFamily);
+    f.setPointSize(cfg.fontSize);
     term->setTerminalFont(f);
     term->setSyntaxHighlighting(m_syntaxHighlight);
     term->setPasteDelay(m_pasteDelay);
-    term->setScrollbackLines(m_settings.scrollbackLines());
+    term->setScrollbackLines(cfg.scrollbackLines);
+    term->setBackspaceCode(cfg.backspaceCode);
 }
 
 } // namespace macxterm::ui

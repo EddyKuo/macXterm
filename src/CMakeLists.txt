@@ -11,6 +11,7 @@ add_library(macxterm_core STATIC
   core/ShortcutRegistry.cpp
   core/CliOptions.cpp
   core/SessionForm.cpp
+  core/TerminalConfig.cpp
   platform/Pty.cpp
   term/ScreenBuffer.cpp
   term/VtEngine.cpp

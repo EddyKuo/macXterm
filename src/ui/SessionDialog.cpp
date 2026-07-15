@@ -109,6 +109,32 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_advForm->addRow(QString(), m_rdpIgnoreCert);
     m_advForm->addRow(QString(), m_vncViewOnly);
 
+    // --- Terminal: per-session overrides of the global appearance/behaviour ---
+    m_terminal = new QGroupBox(QStringLiteral("Terminal (override global defaults)"), this);
+    auto* termForm = new QFormLayout(m_terminal);
+    m_termFont = new QLineEdit(this);
+    m_termFont->setPlaceholderText(QStringLiteral("inherit global font"));
+    m_termFontSize = new QSpinBox(this);
+    m_termFontSize->setRange(0, 72);
+    m_termFontSize->setSpecialValueText(QStringLiteral("inherit"));   // 0 shows "inherit"
+    m_termScheme = new QComboBox(this);
+    m_termScheme->addItem(QStringLiteral("(inherit)"), QString());
+    for (const auto& n : {QStringLiteral("Dark"), QStringLiteral("Light"),
+                          QStringLiteral("Solarized Dark")})
+        m_termScheme->addItem(n, n);
+    m_termScrollback = new QSpinBox(this);
+    m_termScrollback->setRange(-1, 1000000);
+    m_termScrollback->setValue(-1);
+    m_termScrollback->setSpecialValueText(QStringLiteral("inherit"));  // -1 shows "inherit"
+    m_termBackspace = new QComboBox(this);
+    m_termBackspace->addItem(QStringLiteral("Control-? (DEL, default)"), QString());
+    m_termBackspace->addItem(QStringLiteral("Control-H"), QStringLiteral("ctrl-h"));
+    termForm->addRow(QStringLiteral("Font"), m_termFont);
+    termForm->addRow(QStringLiteral("Font size"), m_termFontSize);
+    termForm->addRow(QStringLiteral("Color scheme"), m_termScheme);
+    termForm->addRow(QStringLiteral("Scrollback lines"), m_termScrollback);
+    termForm->addRow(QStringLiteral("Backspace sends"), m_termBackspace);
+
     // Show only the fields relevant to the selected session type.
     auto updateVisibility = [this, form, keyRow] {
         const core::SessionType t = core::sessionTypeFromString(m_type->currentText());
@@ -144,6 +170,14 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         m_advForm->setRowVisible(m_vncViewOnly, vnc);
         // Hide the whole group when nothing in it applies.
         m_advanced->setVisible(ssh || rdp || vnc || gateway);
+
+        // Terminal overrides only apply to session types that host a terminal
+        // pane (not the pure remote-desktop / file-transfer protocols).
+        const bool terminalPane = (t == core::SessionType::Ssh || t == core::SessionType::Telnet ||
+                                   t == core::SessionType::Serial || t == core::SessionType::Mosh ||
+                                   t == core::SessionType::Rsh || t == core::SessionType::Rlogin ||
+                                   t == core::SessionType::Shell);
+        m_terminal->setVisible(terminalPane);
     };
     connect(m_type, &QComboBox::currentTextChanged, this, [updateVisibility](const QString&){ updateVisibility(); });
     updateVisibility();
@@ -155,6 +189,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(form);
     layout->addWidget(m_advanced);
+    layout->addWidget(m_terminal);
     layout->addWidget(buttons);
 }
 
@@ -212,6 +247,21 @@ void SessionDialog::setSession(const core::Session& s) {
     m_rdpNla->setChecked(s.param("nla", QStringLiteral("1")) != QLatin1String("0"));
     m_rdpIgnoreCert->setChecked(s.param("ignorecert") == QLatin1String("1"));
     m_vncViewOnly->setChecked(s.param("viewonly") == QLatin1String("1"));
+
+    // Terminal overrides (blank/sentinel = inherit).
+    m_termFont->setText(s.param("term.font"));
+    m_termFontSize->setValue(s.param("term.fontSize").toInt());   // absent → 0 = inherit
+    {
+        const QString sc = s.param("term.scheme");
+        const int idx = sc.isEmpty() ? 0 : m_termScheme->findData(sc);
+        m_termScheme->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+    {
+        const QString sb = s.param("term.scrollback");
+        m_termScrollback->setValue(sb.isEmpty() ? -1 : sb.toInt());
+    }
+    m_termBackspace->setCurrentIndex(
+        s.param("term.backspace") == QLatin1String("ctrl-h") ? 1 : 0);
 }
 
 core::Session SessionDialog::session() const {
@@ -251,6 +301,16 @@ core::Session SessionDialog::session() const {
     o.rdpIgnoreCert = m_rdpIgnoreCert->isChecked();
     o.vncViewOnly   = m_vncViewOnly->isChecked();
     core::SessionForm::applyAdvanced(f, t, /*hasGateway=*/!m_gateway->text().isEmpty(), o);
+
+    // Terminal overrides: serialize only the fields the user actually changed,
+    // so inherited bookmarks stay minimal.
+    if (!m_termFont->text().isEmpty())  f.insert("term.font", m_termFont->text());
+    if (m_termFontSize->value() > 0)    f.insert("term.fontSize", m_termFontSize->value());
+    if (const QString sc = m_termScheme->currentData().toString(); !sc.isEmpty())
+        f.insert("term.scheme", sc);
+    if (m_termScrollback->value() >= 0) f.insert("term.scrollback", m_termScrollback->value());
+    if (const QString bs = m_termBackspace->currentData().toString(); !bs.isEmpty())
+        f.insert("term.backspace", bs);
     return core::SessionForm::toSession(f);
 }
 

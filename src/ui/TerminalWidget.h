@@ -71,6 +71,9 @@ public:
     void setPasteDelay(int ms) { m_pasteDelayMs = ms; }
     void setScrollbackLines(int n) { m_vt.setScrollbackMax(n); }
     int pasteDelay() const { return m_pasteDelayMs; }
+    // Bytes sent when the Backspace key is pressed (per-session override; DEL
+    // 0x7f by default, ^H 0x08 for hosts that expect the legacy code).
+    void setBackspaceCode(const QByteArray& code) { if (!code.isEmpty()) m_backspaceCode = code; }
 
     QSize sizeHint() const override { return {640, 400}; }
 
@@ -113,6 +116,7 @@ private:
     term::SyntaxHighlighter m_highlighter;
     QFile* m_logFile = nullptr;
     int m_pasteDelayMs = 0;
+    QByteArray m_backspaceCode = "\x7f";
     connect::IConnection* m_conn = nullptr;
     int m_cellW = 8;
     int m_cellH = 16;

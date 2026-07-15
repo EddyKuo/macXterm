@@ -290,7 +290,7 @@ void TerminalWidget::keyPressEvent(QKeyEvent* e) {
     switch (e->key()) {
         case Qt::Key_Return:
         case Qt::Key_Enter:    out = "\r"; break;
-        case Qt::Key_Backspace: out = "\x7f"; break;
+        case Qt::Key_Backspace: out = m_backspaceCode; break;
         case Qt::Key_Tab:      out = "\t"; break;
         case Qt::Key_Escape:   out = "\x1b"; break;
         case Qt::Key_Up:       out = "\x1b[A"; break;
