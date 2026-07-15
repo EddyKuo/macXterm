@@ -38,11 +38,14 @@ public:
     // smaller than the current backlog. A value <= 0 disables scrollback.
     void setScrollbackMax(int lines) {
         m_scrollbackMax = lines < 0 ? 0 : lines;
-        while (m_scrollback.size() > m_scrollbackMax) m_scrollback.removeFirst();
+        while (m_scrollback.size() > m_scrollbackMax) {
+            m_scrollback.removeFirst();
+            if (!m_sbWrapped.isEmpty()) m_sbWrapped.removeFirst();
+        }
     }
     int scrollbackMax() const { return m_scrollbackMax; }
     // Drop all scrolled-off history (the visible screen is left untouched).
-    void clearScrollback() { m_scrollback.clear(); }
+    void clearScrollback() { m_scrollback.clear(); m_sbWrapped.clear(); }
     const QVector<Cell>& scrollbackLine(int i) const { return m_scrollback.at(i); }
 
     // Bracketed-paste mode (DECSET 2004): when the far-end app has enabled it,
@@ -67,6 +70,7 @@ signals:
 
 private:
     void syncFromVterm();
+    void reflowScrollback(int newCols);         // re-wrap history when width changes
     void scanOsc(const QByteArray& bytes);      // sniff OSC 7 cwd from raw stream
     void scanPrivateModes(const QByteArray& bytes);  // sniff DECSET/DECRST (e.g. 2004)
 
@@ -75,6 +79,7 @@ private:
     ScreenBuffer m_screen;
     QByteArray m_pendingOutput;
     QList<QVector<Cell>> m_scrollback;   // scrolled-off lines (capped)
+    QList<bool> m_sbWrapped;             // parallel: was line i soft-wrapped (continues)?
     int m_scrollbackMax = 10000;
     // OSC scanner state (for OSC 7 cwd / OSC 0,2 title).
     int m_oscState = 0;                  // 0 normal, 1 saw ESC, 2 in OSC body

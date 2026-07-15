@@ -60,9 +60,16 @@ int vt_sb_pushline(int cols, const void* cellsv, void* user) {
         mapColor(cells[c].bg, cell.bgKind, cell.bgIndex, cell.bgRgb);
         line[c] = cell;
     }
+    // Heuristic soft-wrap flag: a line whose last column holds a real glyph most
+    // likely continues onto the next line (used to rejoin lines on reflow).
+    const bool wrapped = cols > 0 && !line[cols - 1].ch.isNull()
+                         && line[cols - 1].ch != QChar(' ');
     self->m_scrollback.push_back(line);
-    while (self->m_scrollback.size() > self->m_scrollbackMax)
+    self->m_sbWrapped.push_back(wrapped);
+    while (self->m_scrollback.size() > self->m_scrollbackMax) {
         self->m_scrollback.removeFirst();
+        self->m_sbWrapped.removeFirst();
+    }
     return 1;
 }
 
@@ -72,6 +79,7 @@ int vt_sb_popline(int cols, void* cellsv, void* user) {
     if (self->m_scrollback.isEmpty()) return 0;
     auto* cells = static_cast<VTermScreenCell*>(cellsv);
     const QVector<Cell> line = self->m_scrollback.takeLast();
+    if (!self->m_sbWrapped.isEmpty()) self->m_sbWrapped.removeLast();
     for (int c = 0; c < cols; ++c) {
         cells[c].chars[0] = (c < line.size()) ? line[c].ch.unicode() : 0;
         cells[c].chars[1] = 0;
@@ -128,9 +136,53 @@ void VtEngine::reset() {
 }
 
 void VtEngine::resize(int rows, int cols) {
+    const int oldCols = m_screen.cols();
+    if (cols != oldCols) reflowScrollback(cols);   // re-wrap history to the new width
     vterm_set_size(m_vt, rows, cols);
     m_screen.resize(rows, cols);
     syncFromVterm();
+}
+
+// Re-wrap scrolled-off history when the terminal width changes: rejoin
+// soft-wrapped runs into logical lines, then re-split them at the new width.
+// Hard line ends keep their trailing blanks trimmed. Best-effort: the soft-wrap
+// flag is heuristic (see vt_sb_pushline), so a hard line that exactly filled the
+// old width may merge with the next — an accepted, well-known limitation.
+void VtEngine::reflowScrollback(int newCols) {
+    if (newCols <= 0 || m_scrollback.isEmpty()) return;
+    auto isBlank = [](const Cell& c) { return c.ch.isNull() || c.ch == QChar(' '); };
+
+    // 1. Rejoin into logical lines.
+    QList<QVector<Cell>> logical;
+    QVector<Cell> cur;
+    for (int i = 0; i < m_scrollback.size(); ++i) {
+        QVector<Cell> line = m_scrollback[i];
+        const bool wrapped = (i < m_sbWrapped.size()) && m_sbWrapped[i];
+        if (!wrapped) {
+            int end = line.size();
+            while (end > 0 && isBlank(line[end - 1])) --end;   // trim padding at a hard end
+            line.resize(end);
+        }
+        cur += line;
+        if (!wrapped) { logical.append(cur); cur.clear(); }
+    }
+    if (!cur.isEmpty()) logical.append(cur);
+
+    // 2. Re-split at the new width.
+    QList<QVector<Cell>> out;
+    QList<bool> outWrapped;
+    for (const QVector<Cell>& L : logical) {
+        if (L.isEmpty()) { out.append(QVector<Cell>()); outWrapped.append(false); continue; }
+        for (int off = 0; off < L.size(); off += newCols) {
+            out.append(L.mid(off, newCols));
+            outWrapped.append(off + newCols < L.size());
+        }
+    }
+
+    // 3. Re-apply the cap.
+    while (out.size() > m_scrollbackMax) { out.removeFirst(); outWrapped.removeFirst(); }
+    m_scrollback = out;
+    m_sbWrapped = outWrapped;
 }
 
 // Scan the raw stream for OSC 7 (current working directory), which libvterm

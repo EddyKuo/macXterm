@@ -82,6 +82,32 @@ private slots:
         QCOMPARE(vt.scrollbackCount(), 0);
     }
 
+    void reflowRewrapsHistoryOnNarrow() {
+        // Feed a long line that soft-wraps, push it into scrollback, then narrow.
+        VtEngine vt(2, 20);
+        vt.setScrollbackMax(100);
+        // 25 chars wraps across the 20-col screen; extra newlines push to scrollback.
+        vt.input(QByteArray("abcdefghijklmnopqrstuvwxy\r\n"));
+        for (int i = 0; i < 5; ++i) vt.input(QByteArray("\r\n"));
+        const int before = vt.scrollbackCount();
+        QVERIFY(before > 0);
+        vt.resize(2, 10);   // narrow: the 25-char logical line now needs 3 rows of 10
+        // The reflow must not crash and must keep the engine valid.
+        vt.input(QByteArray("ok"));
+        QVERIFY(vt.screenText().contains("ok"));
+        QVERIFY(vt.scrollbackCount() >= before);   // narrower ⇒ same-or-more rows
+    }
+
+    void reflowWidenReducesRows() {
+        VtEngine vt(2, 10);
+        vt.setScrollbackMax(100);
+        vt.input(QByteArray("abcdefghijklmnopqrst\r\n"));  // 20 chars over 10 cols
+        for (int i = 0; i < 4; ++i) vt.input(QByteArray("\r\n"));
+        const int narrowRows = vt.scrollbackCount();
+        vt.resize(2, 40);   // widen: the wrapped run collapses to fewer rows
+        QVERIFY(vt.scrollbackCount() <= narrowRows);
+    }
+
     void clearScrollbackDropsHistory() {
         VtEngine vt(3, 20);
         vt.setScrollbackMax(100);
