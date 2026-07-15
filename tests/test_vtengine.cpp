@@ -81,6 +81,15 @@ private slots:
         for (int i = 0; i < 20; ++i) vt.input(QByteArray("row\r\n"));
         QCOMPARE(vt.scrollbackCount(), 0);
     }
+
+    void clearScrollbackDropsHistory() {
+        VtEngine vt(3, 20);
+        vt.setScrollbackMax(100);
+        for (int i = 0; i < 20; ++i) vt.input(QByteArray("row\r\n"));
+        QVERIFY(vt.scrollbackCount() > 0);
+        vt.clearScrollback();
+        QCOMPARE(vt.scrollbackCount(), 0);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestVtEngine)

@@ -41,6 +41,8 @@ public:
         while (m_scrollback.size() > m_scrollbackMax) m_scrollback.removeFirst();
     }
     int scrollbackMax() const { return m_scrollbackMax; }
+    // Drop all scrolled-off history (the visible screen is left untouched).
+    void clearScrollback() { m_scrollback.clear(); }
     const QVector<Cell>& scrollbackLine(int i) const { return m_scrollback.at(i); }
 
 signals:

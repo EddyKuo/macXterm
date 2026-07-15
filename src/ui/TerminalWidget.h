@@ -13,6 +13,7 @@ class QFile;
 class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
+class QContextMenuEvent;
 
 namespace macxterm::ui {
 
@@ -56,9 +57,11 @@ public:
     void stopLogging();
     bool isLogging() const { return m_logFile != nullptr; }
 
-    // Clipboard.
+    // Clipboard / selection.
     void copySelection();
     void paste();
+    void selectAll();        // select the whole screen + scrollback
+    void clearScrollback();  // drop history and return to the live bottom
 
     // Paste delay: when > 0, a multi-line paste is delivered line-by-line with
     // this many milliseconds between lines (avoids overrunning slow remotes).
@@ -80,6 +83,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;
 
 private:
     void recomputeGrid();

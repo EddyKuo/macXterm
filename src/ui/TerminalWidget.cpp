@@ -5,6 +5,8 @@
 #include <QWheelEvent>
 #include <QFontMetrics>
 #include <QResizeEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <QApplication>
 #include <QClipboard>
 #include <QFile>
@@ -378,6 +380,43 @@ void TerminalWidget::paste() {
         return;
     }
     sendInput(text.toUtf8());
+}
+
+void TerminalWidget::selectAll() {
+    const int lines = totalLines();
+    if (lines <= 0) return;
+    m_selAnchor = QPoint(0, 0);
+    m_selHead = QPoint(std::max(0, m_vt.cols() - 1), lines - 1);
+    m_hasSelection = true;
+    update();
+}
+
+void TerminalWidget::clearScrollback() {
+    m_vt.clearScrollback();
+    m_scrollOffset = 0;
+    m_hasSelection = false;
+    update();
+}
+
+void TerminalWidget::contextMenuEvent(QContextMenuEvent* e) {
+    QMenu menu(this);
+    QAction* copy = menu.addAction(QStringLiteral("Copy"));
+    copy->setEnabled(m_hasSelection);
+    connect(copy, &QAction::triggered, this, &TerminalWidget::copySelection);
+
+    QAction* paste = menu.addAction(QStringLiteral("Paste"));
+    paste->setEnabled(!QApplication::clipboard()->text().isEmpty());
+    connect(paste, &QAction::triggered, this, &TerminalWidget::paste);
+
+    QAction* selectAllAct = menu.addAction(QStringLiteral("Select All"));
+    connect(selectAllAct, &QAction::triggered, this, &TerminalWidget::selectAll);
+
+    menu.addSeparator();
+    QAction* clear = menu.addAction(QStringLiteral("Clear Scrollback"));
+    clear->setEnabled(m_vt.scrollbackCount() > 0);
+    connect(clear, &QAction::triggered, this, &TerminalWidget::clearScrollback);
+
+    menu.exec(e->globalPos());
 }
 
 } // namespace macxterm::ui
