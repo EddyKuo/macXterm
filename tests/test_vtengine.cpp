@@ -34,6 +34,17 @@ private slots:
         QCOMPARE(vt.screen().at(1, 2).ch, char32_t('X'));
     }
 
+    void cursorPositionTracked() {
+        // The cursor accessor drives IME candidate-window placement.
+        VtEngine vt(5, 20);
+        vt.input("abc");                     // 3 columns advanced on row 0
+        QCOMPARE(vt.cursor(), QPoint(3, 0));
+        vt.input("\r\n");                    // to start of row 1
+        QCOMPARE(vt.cursor(), QPoint(0, 1));
+        vt.input("\x1b[2;5H");               // CUP row 2, col 5 (1-based) → (4,1)
+        QCOMPARE(vt.cursor(), QPoint(4, 1));
+    }
+
     void nonBmpCodepointPreserved() {
         // U+1F600 GRINNING FACE (astral plane) — Cell::ch is a full code point,
         // so it is retained intact (not folded to U+FFFD).

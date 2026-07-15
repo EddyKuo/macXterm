@@ -1,6 +1,7 @@
 #include "ui/TerminalWidget.h"
 #include <QPainter>
 #include <QStringList>
+#include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -57,6 +58,9 @@ static QStringList withFallback(const QString& primary) {
 TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(false);
+    // Accept input-method composition so CJK (and other IME) text can be typed;
+    // the composed result is delivered via inputMethodEvent().
+    setAttribute(Qt::WA_InputMethodEnabled, true);
     // Cross-platform monospace font with Nerd Font (Powerline/icon glyphs) and
     // CJK fallbacks. Primary monospace keeps its look for normal text; missing
     // glyphs fall through per-character to the Nerd Font, then CJK. Unlisted
@@ -335,6 +339,36 @@ void TerminalWidget::keyPressEvent(QKeyEvent* e) {
         default:               out = e->text().toUtf8(); break;
     }
     if (!out.isEmpty()) sendInput(out);
+}
+
+// Composed input-method text (CJK etc.) arrives here rather than via
+// keyPressEvent. Send the committed string to the far end as UTF-8. The preedit
+// (in-progress composition) is handled by the platform IME overlay, so we only
+// act on the final commit.
+void TerminalWidget::inputMethodEvent(QInputMethodEvent* e) {
+    if (m_scrollOffset != 0) { m_scrollOffset = 0; update(); }
+    const QByteArray commit = e->commitString().toUtf8();
+    if (!commit.isEmpty()) sendInput(commit);
+    e->accept();
+}
+
+// Tell the IME where to place its candidate/composition window: at the terminal
+// cursor cell (falls back to the widget origin). Also report that input-method
+// input is enabled.
+QVariant TerminalWidget::inputMethodQuery(Qt::InputMethodQuery q) const {
+    switch (q) {
+    case Qt::ImEnabled:
+        return true;
+    case Qt::ImCursorRectangle: {
+        // Place the candidate window at the cursor cell (visible-screen coords).
+        const QPoint c = m_vt.cursor();
+        return QRect(c.x() * m_cellW, c.y() * m_cellH, m_cellW, m_cellH);
+    }
+    case Qt::ImFont:
+        return font();
+    default:
+        return QWidget::inputMethodQuery(q);
+    }
 }
 
 // ── mouse selection ──

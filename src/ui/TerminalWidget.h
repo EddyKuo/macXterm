@@ -90,6 +90,10 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
+    // Input-method (IME) support so CJK / other composed text can be typed: the
+    // committed string arrives here, not through keyPressEvent.
+    void inputMethodEvent(QInputMethodEvent* e) override;
+    QVariant inputMethodQuery(Qt::InputMethodQuery q) const override;
 
 private:
     void recomputeGrid();

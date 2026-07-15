@@ -308,6 +308,10 @@ void VtEngine::syncFromVterm() {
             m_screen.at(r, c) = cell;
         }
     }
+    // Track the cursor so the IME can place its candidate window on the caret.
+    VTermPos cp{};
+    vterm_state_get_cursorpos(vterm_obtain_state(m_vt), &cp);
+    m_cursor = QPoint(cp.col, cp.row);
     emit screenUpdated();
 }
 

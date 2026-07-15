@@ -30,6 +30,9 @@ public:
     int cols() const { return m_screen.cols(); }
     const ScreenBuffer& screen() const { return m_screen; }
 
+    // Current cursor position in the visible screen as (col, row), 0-based.
+    QPoint cursor() const { return m_cursor; }
+
     // Convenience: the current visible screen as text.
     QString screenText() const { return m_screen.toText(); }
 
@@ -85,6 +88,7 @@ private:
     VTerm* m_vt = nullptr;
     VTermScreen* m_vts = nullptr;
     ScreenBuffer m_screen;
+    QPoint m_cursor;                     // visible-screen cursor (col, row)
     QByteArray m_pendingOutput;
     QList<QVector<Cell>> m_scrollback;   // scrolled-off lines (capped)
     QList<bool> m_sbWrapped;             // parallel: was line i soft-wrapped (continues)?
