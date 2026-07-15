@@ -13,6 +13,9 @@
 #include <QLabel>
 #include <QToolButton>
 #include <QHBoxLayout>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QRegularExpression>
 #include <QFile>
 #include <QMessageBox>
 #include <QTimer>
@@ -367,6 +370,12 @@ static int buttonBaseCode(Qt::MouseButton b) {
 }
 
 void TerminalWidget::mousePressEvent(QMouseEvent* e) {
+    // Cmd (macOS) / Ctrl (elsewhere) + left click opens a URL under the cursor.
+    if (e->button() == Qt::LeftButton && e->modifiers().testFlag(Qt::ControlModifier)) {
+        const QPoint cell = cellForPos(e->pos());
+        const QString url = urlAt(cell.y(), cell.x());
+        if (!url.isEmpty()) { QDesktopServices::openUrl(QUrl(url)); return; }
+    }
     const int base = buttonBaseCode(e->button());
     if (reportMouseIfEnabled(e, base, /*release=*/false, /*motion=*/false)) {
         m_mouseBtn = base;
@@ -518,6 +527,28 @@ QString TerminalWidget::lineText(int absLine) const {
     return s;
 }
 
+QString TerminalWidget::urlAt(int absLine, int col) const {
+    const QString text = lineText(absLine);
+    // Match http(s)/ftp/file URLs and bare www. hosts.
+    static const QRegularExpression re(
+        QStringLiteral("(https?://|ftp://|file://|www\\.)[^\\s\"'<>()]+"),
+        QRegularExpression::CaseInsensitiveOption);
+    auto it = re.globalMatch(text);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        if (col >= m.capturedStart() && col < m.capturedEnd()) {
+            QString url = m.captured();
+            // Drop trailing sentence punctuation that isn't part of the link.
+            while (!url.isEmpty() && QStringLiteral(".,;:!?").contains(url.back()))
+                url.chop(1);
+            if (url.startsWith(QStringLiteral("www."), Qt::CaseInsensitive))
+                url.prepend(QStringLiteral("https://"));
+            return url;
+        }
+    }
+    return {};
+}
+
 void TerminalWidget::showFindBar() {
     if (!m_findBar) {
         m_findBar = new QWidget(this);
@@ -620,6 +651,13 @@ void TerminalWidget::findReveal(int index) {
 
 void TerminalWidget::contextMenuEvent(QContextMenuEvent* e) {
     QMenu menu(this);
+    const QPoint cell = cellForPos(e->pos());
+    const QString url = urlAt(cell.y(), cell.x());
+    if (!url.isEmpty()) {
+        QAction* open = menu.addAction(QStringLiteral("Open Link"));
+        connect(open, &QAction::triggered, this, [url] { QDesktopServices::openUrl(QUrl(url)); });
+        menu.addSeparator();
+    }
     QAction* copy = menu.addAction(QStringLiteral("Copy"));
     copy->setEnabled(m_hasSelection);
     connect(copy, &QAction::triggered, this, &TerminalWidget::copySelection);

@@ -93,6 +93,7 @@ private:
     void updateCellMetrics();
     // Scrollback search.
     QString lineText(int absLine) const;
+    QString urlAt(int absLine, int col) const;   // URL spanning a cell, or empty
     void findUpdate(const QString& query);     // recompute matches for a query
     void findStep(bool forward);               // move to next/prev match
     void findReveal(int index);                // select + scroll match into view
