@@ -179,6 +179,11 @@ void MainWindow::editShortcuts() {
 }
 
 void MainWindow::buildMenus() {
+    // Keep the menu bar docked inside the main window on every platform. On
+    // macOS Qt would otherwise hoist it into the desktop global menu bar; we
+    // want all commands to live in the application window itself.
+    menuBar()->setNativeMenuBar(false);
+
     QMenu* file = menuBar()->addMenu(QStringLiteral("&File"));
     file->addAction(QStringLiteral("New Shell"), this, [this] { openLocalShell(); });
     file->addAction(QStringLiteral("New Session…"), this, [this] {

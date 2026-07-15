@@ -17,15 +17,22 @@ namespace macxterm::ui {
 TerminalWidget::TerminalWidget(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(false);
-    // Cross-platform monospace font with CJK fallbacks (see setTerminalFont).
+    // Cross-platform monospace font with Nerd Font (Powerline/icon glyphs) and
+    // CJK fallbacks. Primary monospace keeps its look for normal text; missing
+    // glyphs fall through per-character to the Nerd Font, then CJK. Unlisted
+    // fonts are simply skipped by Qt, so naming several common Nerd Fonts is safe
+    // (see setTerminalFont).
     QFont f;
     f.setStyleHint(QFont::Monospace);
 #if defined(Q_OS_WIN)
-    f.setFamilies({"Consolas", "Microsoft YaHei Mono", "Microsoft JhengHei", "NSimSun"});
+    f.setFamilies({"Consolas", "CaskaydiaCove Nerd Font", "JetBrainsMono Nerd Font",
+                   "Symbols Nerd Font", "Microsoft YaHei Mono", "Microsoft JhengHei", "NSimSun"});
 #elif defined(Q_OS_MACOS)
-    f.setFamilies({"Menlo", "PingFang SC", "Hiragino Sans"});
+    f.setFamilies({"Menlo", "MesloLGS NF", "JetBrainsMono Nerd Font",
+                   "Symbols Nerd Font", "PingFang SC", "Hiragino Sans"});
 #else
-    f.setFamilies({"DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "monospace"});
+    f.setFamilies({"DejaVu Sans Mono", "JetBrainsMono Nerd Font", "Symbols Nerd Font",
+                   "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "monospace"});
 #endif
     f.setFixedPitch(true);
     f.setPointSize(12);
