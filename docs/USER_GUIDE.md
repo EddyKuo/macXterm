@@ -1,3 +1,5 @@
+**English** | [中文](USER_GUIDE.zh.md)
+
 # macXterm User Guide
 
 Welcome to **macXterm** — a fast, native, cross-platform terminal and remote-computing
@@ -49,6 +51,9 @@ When macXterm starts you'll see a three-part window:
 
 - **Session-tree sidebar** (left) — a dockable "Sessions" panel that lists your saved
   connection profiles under a root folder. Double-click (activate) any entry to open it.
+  A **filter box** at the top narrows the tree as you type, matching a session's name,
+  host, username, or folder (case-insensitive); folders with no surviving match drop out,
+  and clearing the box restores the full tree.
 - **Tabbed terminal area** (center) — where each open session lives in its own closable,
   movable tab.
 - **Toolbar** (top) — the main action bar with these buttons:
@@ -100,7 +105,6 @@ are shown.
 - **Mosh** — mobile shell, roaming-friendly over SSH bootstrap. Needs **Host**/**Username**.
 - **RSH** / **Rlogin** — legacy remote-shell protocols over a simple TCP stream, each with
   its startup handshake. Needs **Host** (and **Username** for the login handshake).
-- **XDMCP** — X Display Manager query bootstrap. Needs **Host**.
 - **XDMCP** — X Display Manager query bootstrap. Needs **Host**.
 - **SFTP** — a dedicated SFTP file-browser session (no terminal). Needs **Host**/**Username**.
 - **FTP** — a graphical FTP browser (passive mode). Needs **Host**.
