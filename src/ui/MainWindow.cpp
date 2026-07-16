@@ -99,8 +99,26 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::itemActivated, this, &MainWindow::onTreeActivated);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &MainWindow::showTreeContextMenu);
+
+    // Live filter box above the tree (MobaXterm parity): narrows the bookmark
+    // tree as you type, matching name/host/user/folder.
+    auto* filter = new QLineEdit(this);
+    filter->setPlaceholderText(QStringLiteral("Filter sessions…"));
+    filter->setClearButtonEnabled(true);
+    connect(filter, &QLineEdit::textChanged, this, [this](const QString& q) {
+        m_treeFilter = q;
+        reloadSessionTree();
+    });
+    auto* treePane = new QWidget(this);
+    auto* treeLayout = new QVBoxLayout(treePane);
+    treeLayout->setContentsMargins(0, 0, 0, 0);
+    treeLayout->setSpacing(2);
+    treeLayout->addWidget(filter);
+    treeLayout->addWidget(m_tree, 1);
+
     auto* dock = new QDockWidget(QStringLiteral("Sessions"), this);
-    dock->setWidget(m_tree);
+    dock->setWidget(treePane);
+    dock->widget()->setMinimumWidth(200);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
 
     // Open the persistent session store (per-user app data dir) and load saved
@@ -595,9 +613,13 @@ void MainWindow::buildToolbar() {
 void MainWindow::reloadSessionTree() {
     m_tree->clear();
     auto* root = new QTreeWidgetItem(m_tree, {m_sessions.name()});
-    // Group bookmarks by their "folder" param so the tree mirrors MobaXterm's
-    // organised bookmark view (loose sessions first, then named folders).
-    for (const core::FolderGroup& g : core::groupSessionsByFolder(m_sessions.sessions())) {
+    // Apply the live filter, then group bookmarks by their "folder" param so the
+    // tree mirrors MobaXterm's organised bookmark view (loose sessions first,
+    // then named folders). Folders with no surviving sessions drop out naturally.
+    QList<core::Session> filtered;
+    for (const core::Session& s : m_sessions.sessions())
+        if (core::sessionMatchesFilter(s, m_treeFilter)) filtered.push_back(s);
+    for (const core::FolderGroup& g : core::groupSessionsByFolder(filtered)) {
         QTreeWidgetItem* parent = root;
         if (!g.folder.isEmpty()) {
             parent = new QTreeWidgetItem(root, {g.folder});
@@ -965,6 +987,11 @@ void MainWindow::splitQuad() {
     auto* outer = new QSplitter(Qt::Vertical, m_tabs);
     auto* top = new QSplitter(Qt::Horizontal, outer);
     auto* bottom = new QSplitter(Qt::Horizontal, outer);
+    // Never let a handle collapse a pane to zero (it would leave a live session
+    // with no grab-target to restore).
+    outer->setChildrenCollapsible(false);
+    top->setChildrenCollapsible(false);
+    bottom->setChildrenCollapsible(false);
     top->addWidget(cur);
     top->addWidget(makePane(s));
     bottom->addWidget(makePane(s));
@@ -993,6 +1020,7 @@ void MainWindow::splitCurrent(Qt::Orientation orientation) {
     } else {
         m_tabs->removeTab(idx);
         auto* split = new QSplitter(orientation, m_tabs);
+        split->setChildrenCollapsible(false);   // panes can't be dragged to zero
         split->addWidget(cur);
         split->addWidget(pane);
         m_tabs->insertTab(idx, split, title);
@@ -1004,9 +1032,13 @@ void MainWindow::splitCurrent(Qt::Orientation orientation) {
 void MainWindow::showSftpFor(const core::Session& session) {
     if (!m_sftpDock) {
         m_sftpPanel = new SftpPanel(this);
+        m_sftpPanel->setMinimumWidth(220);   // keep the 4-column list + toolbar legible
         m_sftpDock = new QDockWidget(QStringLiteral("SFTP"), this);
         m_sftpDock->setWidget(m_sftpPanel);
         addDockWidget(Qt::LeftDockWidgetArea, m_sftpDock);   // MobaXterm places it on the left
+        // Stack (tab) with the FTP dock rather than splitting the left width
+        // three ways with the session tree.
+        if (m_ftpDock) tabifyDockWidget(m_ftpDock, m_sftpDock);
     }
     m_sftpDock->show();
     m_sftpPanel->openFor(resolveSecrets(session));   // dedicated SFTP session (blocking; LAN-fast)
@@ -1025,9 +1057,11 @@ void MainWindow::syncRemoteDocks() {
 void MainWindow::showFtpFor(const core::Session& session) {
     if (!m_ftpDock) {
         m_ftpPanel = new SftpPanel(SftpPanel::Backend::Ftp, this);
+        m_ftpPanel->setMinimumWidth(220);
         m_ftpDock = new QDockWidget(QStringLiteral("FTP"), this);
         m_ftpDock->setWidget(m_ftpPanel);
         addDockWidget(Qt::LeftDockWidgetArea, m_ftpDock);
+        if (m_sftpDock) tabifyDockWidget(m_sftpDock, m_ftpDock);
     }
     m_ftpDock->show();
     m_ftpPanel->openFor(resolveSecrets(session));

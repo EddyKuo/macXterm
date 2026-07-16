@@ -76,6 +76,9 @@ public:
     void setBackspaceCode(const QByteArray& code) { if (!code.isEmpty()) m_backspaceCode = code; }
 
     QSize sizeHint() const override { return {640, 400}; }
+    // Floor so a split pane can never be dragged to an unusable/unrecoverable
+    // size: keep at least a few cells visible and grabbable.
+    QSize minimumSizeHint() const override { return {m_cellW * 8, m_cellH * 3}; }
 
 signals:
     void cwdChanged(const QString& absPath);   // OSC 7 from the shell

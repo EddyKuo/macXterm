@@ -2,6 +2,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QHostAddress>
+#include <memory>
 
 namespace macxterm::tunnel {
 
@@ -49,7 +50,13 @@ void LocalForwarder::onNewConnection() {
         // connected readyRead — drain it so the first bytes aren't lost.
         if (client->bytesAvailable() > 0) pump(client, upstream);
 
-        auto teardown = [this, client, upstream] {
+        // Both sockets typically disconnect in quick succession; a run-once
+        // guard keeps teardown (and the --m_active it performs) to exactly one
+        // execution per logical connection, so connectionCount() stays accurate.
+        auto done = std::make_shared<bool>(false);
+        auto teardown = [this, client, upstream, done] {
+            if (*done) return;
+            *done = true;
             client->deleteLater();
             upstream->deleteLater();
             if (m_active > 0) { --m_active; emit connectionCount(m_active); }

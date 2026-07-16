@@ -1,3 +1,5 @@
+**English** | [中文](BUILD.zh.md)
+
 # Building macXterm
 
 macXterm is a single-process, native Qt + C/C++ desktop application. It builds

@@ -1,3 +1,5 @@
+**English** | [中文](DESIGN.zh.md)
+
 # macXterm — Design Document
 
 > **Status:** living document · **Audience:** developers, reviewers, contributors
@@ -610,7 +612,7 @@ macXterm builds and passes its **full 71-suite test set** on macOS and Linux
 - **RDP** — real FreeRDP connect + TLS handshake + GDI framebuffer + interactive input + resolution/redirection flags, end-to-end against `sfreerdp-server`.
 - **XDMCP** — Query→Willing→Request→Accept handshake codec + UDP state machine (loopback-tested; see below for the display-redirection gap).
 - Graphical **SFTP & FTP browsers** — drag-and-drop, follow-terminal-folder, remote edit-and-resave, recursive folder transfer with cancelable progress, date column / sort / Home.
-- Credential vault (AES-GCM + Argon2id/scrypt), SQLite store + known-hosts, **folder/icon session tree**, `ssh_config` & `MobaXterm.ini` import.
+- Credential vault (AES-GCM + Argon2id/scrypt), SQLite store + known-hosts, **folder/icon session tree** with a live name/host/user/folder filter (pure `core::sessionMatchesFilter`), `ssh_config` & `MobaXterm.ini` import.
 - SSH tunnels — local/remote/**dynamic (SOCKS)** (loopback e2e) + jump-host routing for RDP/VNC; macros, shortcuts, CLI parsing.
 - Built-in servers: TFTP / HTTP / FTP / Telnet / CRON / **NFSv3 (read/write)** / SSH·SFTP (all tested over loopback / with fixtures).
 - Tools: port scanner, subnet sweep, **packet capture (libpcap)**, keygen, image viewer, text & folder diff, remote CPU/RAM monitor.

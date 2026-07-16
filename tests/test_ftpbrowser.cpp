@@ -6,8 +6,48 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QScopeGuard>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 using namespace macxterm;
+
+// Minimal fake FTP control server whose greeting spans MULTIPLE lines, used to
+// prove FtpClient::readReply no longer mistakes a continuation line (which also
+// carries a space at index 3) for the terminating reply line.
+class FakeMultilineFtp : public QObject {
+    Q_OBJECT
+public:
+    bool start() {
+        m_srv = new QTcpServer(this);
+        connect(m_srv, &QTcpServer::newConnection, this, &FakeMultilineFtp::onConn);
+        return m_srv->listen(QHostAddress::LocalHost, 0);
+    }
+    quint16 port() const { return m_srv ? m_srv->serverPort() : 0; }
+    void stop() { if (m_srv) m_srv->close(); }
+private slots:
+    void onConn() {
+        QTcpSocket* c = m_srv->nextPendingConnection();
+        // A bare continuation line (no "NNN-" prefix, per RFC 959) whose text
+        // has a space at index 3 ("The" + space) — exactly the shape the old
+        // readReply mistook for the terminator.
+        c->write("220-Welcome to Test FTP\r\n"
+                 "The service will be down soon\r\n"
+                 "220 Ready\r\n");
+        connect(c, &QTcpSocket::readyRead, c, [c] {
+            while (c->canReadLine()) {
+                const QByteArray line = c->readLine();
+                if (line.startsWith("USER"))      c->write("331 Need password\r\n");
+                else if (line.startsWith("PASS")) c->write("230 Logged in\r\n");
+                else if (line.startsWith("TYPE")) c->write("200 OK\r\n");
+                else if (line.startsWith("PWD"))  c->write("257 \"/\" is cwd\r\n");
+                else if (line.startsWith("QUIT")) c->write("221 Bye\r\n");
+                else                              c->write("500 Unknown\r\n");
+            }
+        });
+    }
+private:
+    QTcpServer* m_srv = nullptr;
+};
 
 // End-to-end test for the graphical FTP browser backend (sftp::FtpClient) driving
 // the built-in FtpServer's passive-mode data channel over loopback: connect,
@@ -123,6 +163,41 @@ private slots:
 
         client.disconnectSession();
         // Server-thread teardown handled by the scope guard above.
+    }
+
+    // Regression: a multi-line 220 greeting must be accepted. The old readReply
+    // treated any line with a space at index 3 as the terminator, so the
+    // continuation "The service will be down soon" was misparsed (code "The" →
+    // 0) and connectSession aborted with "No FTP greeting".
+    void parsesMultiLineGreeting() {
+        QThread th;
+        th.start();
+        FakeMultilineFtp srv;
+        srv.moveToThread(&th);
+        auto guard = qScopeGuard([&] {
+            if (th.isRunning()) {
+                QMetaObject::invokeMethod(&srv, [&] { srv.stop(); },
+                                          Qt::BlockingQueuedConnection);
+                th.quit();
+                th.wait();
+            }
+        });
+        bool ok = false;
+        QMetaObject::invokeMethod(&srv, [&] { ok = srv.start(); },
+                                  Qt::BlockingQueuedConnection);
+        QVERIFY(ok);
+        quint16 port = 0;
+        QMetaObject::invokeMethod(&srv, [&] { port = srv.port(); },
+                                  Qt::BlockingQueuedConnection);
+
+        sftp::FtpClient client;
+        core::Session s("ftp", core::SessionType::Ftp);
+        s.setHost("127.0.0.1");
+        s.setPort(port);
+        s.setUsername("anonymous");
+        QVERIFY(client.connectSession(s));   // must not reject the multi-line greeting
+        QVERIFY(client.isReady());
+        client.disconnectSession();
     }
 };
 

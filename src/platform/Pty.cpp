@@ -190,7 +190,10 @@ qint64 Pty::readAvailable(QByteArray& out) {
     char buf[4096];
     const ssize_t n = ::read(m_master, buf, sizeof(buf));
     if (n > 0) { out.append(buf, static_cast<int>(n)); return n; }
-    if (n == 0) return 0;
+    // n == 0 is EOF on the pty master (child exited / slave closed). On macOS
+    // BSD ptys this is how a normal shell exit surfaces, so it must trigger the
+    // finished() path — not be confused with EAGAIN (no data yet), which is 0.
+    if (n == 0) return -1;
     if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
     return -1;
 }

@@ -55,4 +55,10 @@ QStringList folderNames(const QList<Session>& sessions);
 // param wins; otherwise it defaults from the session type. Pure/testable.
 QString sessionGlyph(const Session& s);
 
+// Case-insensitive match of a session against a free-text filter query, testing
+// the fields a user would search the bookmark tree by: name, host, username and
+// folder. An empty/blank query matches everything. Pure — backs the tree's live
+// filter box (MobaXterm parity) so the matching is unit-tested without the GUI.
+bool sessionMatchesFilter(const Session& s, const QString& query);
+
 } // namespace macxterm::core

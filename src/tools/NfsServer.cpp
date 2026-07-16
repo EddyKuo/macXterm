@@ -303,7 +303,11 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             if (r.u32(&ok) == 2) { r.u32(&ok); r.u32(&ok); }
             if (r.u32(&ok) == 2) { r.u32(&ok); r.u32(&ok); }
             r.u32(&ok);                                 // guard.check = false
-            if (!path.isEmpty()) {
+            // Only mutate the file if the ENTIRE request parsed cleanly. A short
+            // read leaves m_pos unadvanced, so every subsequent field read also
+            // fails and clears `ok` — a datagram truncated mid-SETATTR therefore
+            // never reaches chmod()/truncate() with a bogus (e.g. zero) value.
+            if (ok && !path.isEmpty()) {
                 if (setMode) { ::chmod(path.toUtf8().constData(), mode & 07777); has = true; }
                 if (setSize) { ::truncate(path.toUtf8().constData(), static_cast<off_t>(size)); has = true; }
             }
