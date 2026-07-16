@@ -88,6 +88,11 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
     m_list->setRootIsDecorated(false);
     m_list->header()->setStretchLastSection(false);
     m_list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    // Keep Size/Modified/Perms legible even when the dock is narrow.
+    m_list->header()->setMinimumSectionSize(40);
+    m_list->header()->resizeSection(1, 80);    // Size
+    m_list->header()->resizeSection(2, 130);   // Modified
+    m_list->header()->resizeSection(3, 90);    // Perms
     m_list->setSortingEnabled(true);
     m_list->sortByColumn(0, Qt::AscendingOrder);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);

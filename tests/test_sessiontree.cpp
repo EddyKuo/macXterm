@@ -47,6 +47,23 @@ private slots:
         QCOMPARE(folderNames(in), (QStringList{QStringLiteral("B"), QStringLiteral("A")}));
     }
 
+    // The live tree filter matches name/host/username/folder, case-insensitively;
+    // a blank query matches everything.
+    void filterMatchesAcrossFields() {
+        Session s("WebProd", SessionType::Ssh);
+        s.setParam("host", "db.example.com");
+        s.setParam("username", "deploy");
+        s.setParam("folder", "Production");
+
+        QVERIFY(sessionMatchesFilter(s, QString()));            // blank → all
+        QVERIFY(sessionMatchesFilter(s, QStringLiteral("  ")));  // whitespace → all
+        QVERIFY(sessionMatchesFilter(s, QStringLiteral("web")));      // name, case-insensitive
+        QVERIFY(sessionMatchesFilter(s, QStringLiteral("EXAMPLE")));  // host
+        QVERIFY(sessionMatchesFilter(s, QStringLiteral("deploy")));   // username
+        QVERIFY(sessionMatchesFilter(s, QStringLiteral("prod")));     // folder (and name substring)
+        QVERIFY(!sessionMatchesFilter(s, QStringLiteral("staging"))); // no field matches
+    }
+
     // Explicit icon wins; otherwise the glyph defaults from the session type.
     void glyphPrefersExplicitIconThenType() {
         Session custom("x", SessionType::Ssh);

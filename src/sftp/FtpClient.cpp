@@ -60,8 +60,15 @@ int FtpClient::readReply(QString* text) {
         while (m_ctrl->canReadLine()) {
             const QString line = QString::fromUtf8(m_ctrl->readLine());
             acc += line;
-            if (line.size() >= 4 && line[3] == ' ') {
-                code = line.left(3).toInt();
+            // A reply line carries a code only when it starts with 3 digits.
+            // The block ends on the first "NNN <text>" line whose code matches
+            // the code captured from the first line — NOT merely any line with a
+            // space at index 3 (a continuation like "The service..." also has one).
+            const bool hasCode = line.size() >= 3 && line[0].isDigit()
+                                 && line[1].isDigit() && line[2].isDigit();
+            if (hasCode && code == 0) code = line.left(3).toInt();
+            if (hasCode && line.size() >= 4 && line[3] == ' '
+                && line.left(3).toInt() == code) {
                 if (text) *text = acc.trimmed();
                 return code;
             }

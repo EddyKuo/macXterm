@@ -81,6 +81,7 @@ private:
 
     QTabWidget* m_tabs = nullptr;
     QTreeWidget* m_tree = nullptr;
+    QString m_treeFilter;   // live filter text for the session tree
     QDockWidget* m_sftpDock = nullptr;
     SftpPanel* m_sftpPanel = nullptr;
     QDockWidget* m_ftpDock = nullptr;

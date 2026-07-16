@@ -137,10 +137,21 @@ qint64 SftpConnection::download(const QString& remotePath, const QString& localP
     char buf[16384];
     ssize_t n = 0;
     while ((n = libssh2_sftp_read(h, buf, sizeof(buf))) > 0) {
-        local.write(buf, n);
+        if (local.write(buf, n) != n) {   // local write failed (e.g. disk full)
+            libssh2_sftp_close(h); local.close(); QFile::remove(localPath);
+            emit error(QStringLiteral("SFTP download: local write failed"));
+            return -1;
+        }
         total += n;
     }
     libssh2_sftp_close(h);
+    // n < 0 is a mid-transfer read error; n == 0 is a clean EOF. Only the clean
+    // EOF is a real success — a partial byte count must not be reported as one.
+    if (n < 0) {
+        local.close(); QFile::remove(localPath);
+        emit error(QStringLiteral("SFTP download failed mid-transfer"));
+        return -1;
+    }
     return total;
 }
 
@@ -163,6 +174,10 @@ qint64 SftpConnection::upload(const QString& localPath, const QString& remotePat
         total += n;
     }
     libssh2_sftp_close(h);
+    if (off < data.size()) {   // write returned <= 0 before all bytes were sent
+        emit error(QStringLiteral("SFTP upload failed mid-transfer"));
+        return -1;
+    }
     return total;
 }
 
@@ -184,6 +199,11 @@ qint64 SftpConnection::scpDownload(const QString& remotePath, const QString& loc
     }
     libssh2_channel_send_eof(ch);
     libssh2_channel_free(ch);
+    if (remaining > 0) {   // read stopped before the full st_size was received
+        local.close(); QFile::remove(localPath);
+        emit error(QStringLiteral("SCP download truncated"));
+        return -1;
+    }
     return total;
 }
 
@@ -207,6 +227,10 @@ qint64 SftpConnection::scpUpload(const QString& localPath, const QString& remote
     libssh2_channel_wait_eof(ch);
     libssh2_channel_wait_closed(ch);
     libssh2_channel_free(ch);
+    if (off < data.size()) {   // write errored before all bytes were sent
+        emit error(QStringLiteral("SCP upload truncated"));
+        return -1;
+    }
     return total;
 }
 

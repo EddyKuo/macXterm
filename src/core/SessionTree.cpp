@@ -65,6 +65,16 @@ QString sessionGlyph(const Session& s) {
     }
 }
 
+bool sessionMatchesFilter(const Session& s, const QString& query) {
+    const QString q = query.trimmed();
+    if (q.isEmpty()) return true;
+    const auto has = [&](const QString& field) {
+        return field.contains(q, Qt::CaseInsensitive);
+    };
+    return has(s.name()) || has(s.host()) || has(s.username())
+        || has(s.param(QStringLiteral("folder")));
+}
+
 QStringList folderNames(const QList<Session>& sessions) {
     QStringList names;
     for (const Session& s : sessions) {

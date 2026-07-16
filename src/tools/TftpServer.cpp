@@ -56,10 +56,18 @@ void TftpServer::onDatagram() {
             auto it = m_transfers.find(key);
             if (it == m_transfers.end()) continue;
             if (p.block == it->nextBlock) {
-                const int sent = it->nextBlock * kBlockSize;
-                if (sent >= it->data.size()) { m_transfers.erase(it); continue; }  // done
+                // Length of the block just acknowledged. Per RFC 1350 the
+                // transfer ends only after a block *shorter* than kBlockSize;
+                // for a file that is an exact multiple of the block size a
+                // final 0-byte DATA block must still be sent, or the client
+                // waits for it and times out.
+                const int ackedStart = (it->nextBlock - 1) * kBlockSize;
+                const int ackedLen = static_cast<int>(
+                    qMin<qint64>(kBlockSize, it->data.size() - ackedStart));
+                if (ackedLen < kBlockSize) { m_transfers.erase(it); continue; }  // last (short) block acked → done
                 ++it->nextBlock;
-                sendTo(tftp::encodeData(it->nextBlock, it->data.mid(sent, kBlockSize)));
+                const int off = (it->nextBlock - 1) * kBlockSize;
+                sendTo(tftp::encodeData(it->nextBlock, it->data.mid(off, kBlockSize)));
             }
         } else if (p.op == tftp::Op::WRQ) {
             sendTo(tftp::encodeError(2, "Server is read-only"));
