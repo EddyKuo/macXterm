@@ -7,6 +7,8 @@ class QLineEdit;
 class QSpinBox;
 class QComboBox;
 class QCheckBox;
+class QFontComboBox;
+class QLabel;
 
 namespace macxterm::ui {
 
@@ -19,12 +21,18 @@ public:
     core::Settings settings() const;
 
 private:
-    QLineEdit* m_font = nullptr;
+    // Re-render the font preview and recompute the Unicode-coverage line from the
+    // currently-selected family + size.
+    void updateFontPreview();
+
+    QFontComboBox* m_font = nullptr;
     QSpinBox*  m_fontSize = nullptr;
     QComboBox* m_scheme = nullptr;
     QSpinBox*  m_scrollback = nullptr;
     QCheckBox* m_x11Auto = nullptr;
     QCheckBox* m_x11Fwd = nullptr;
+    QLabel*    m_preview = nullptr;
+    QLabel*    m_coverage = nullptr;
 };
 
 } // namespace macxterm::ui
