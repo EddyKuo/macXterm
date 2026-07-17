@@ -69,33 +69,10 @@
 #include <QSettings>
 #include <QFont>
 #include <QSplitter>
-#include <QIcon>
-#include <QPixmap>
-#include <QPainter>
+#include "ui/GlyphIcon.h"
 #include "term/ColorScheme.h"
 
 namespace macxterm::ui {
-
-namespace {
-// Render an emoji glyph into a crisp, menu-sized QIcon so the session-tree
-// context menu speaks the same visual language as the tree itself (whose rows
-// are prefixed with core::sessionGlyph). Pure presentation — kept UI-local.
-QIcon glyphIcon(const QString& glyph) {
-    if (glyph.isEmpty()) return QIcon();
-    const int px = 16;
-    const qreal dpr = qGuiApp ? qGuiApp->devicePixelRatio() : 1.0;
-    QPixmap pm(QSize(px, px) * dpr);
-    pm.setDevicePixelRatio(dpr);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    QFont f = p.font();
-    f.setPointSizeF(px * 0.72);
-    p.setFont(f);
-    p.drawText(QRectF(0, 0, px, px), Qt::AlignCenter, glyph);
-    p.end();
-    return QIcon(pm);
-}
-}  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(QStringLiteral("macXterm"));

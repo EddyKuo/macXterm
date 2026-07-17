@@ -1,4 +1,5 @@
 #include "ui/TerminalWidget.h"
+#include "ui/GlyphIcon.h"
 #include <QPainter>
 #include <QStringList>
 #include <QInputMethodEvent>
@@ -684,26 +685,26 @@ void TerminalWidget::contextMenuEvent(QContextMenuEvent* e) {
     const QPoint cell = cellForPos(e->pos());
     const QString url = urlAt(cell.y(), cell.x());
     if (!url.isEmpty()) {
-        QAction* open = menu.addAction(QStringLiteral("Open Link"));
+        QAction* open = menu.addAction(glyphIcon(QStringLiteral("🔗")), QStringLiteral("Open Link"));
         connect(open, &QAction::triggered, this, [url] { QDesktopServices::openUrl(QUrl(url)); });
         menu.addSeparator();
     }
-    QAction* copy = menu.addAction(QStringLiteral("Copy"));
+    QAction* copy = menu.addAction(glyphIcon(QStringLiteral("📋")), QStringLiteral("Copy"));
     copy->setEnabled(m_hasSelection);
     connect(copy, &QAction::triggered, this, &TerminalWidget::copySelection);
 
-    QAction* paste = menu.addAction(QStringLiteral("Paste"));
+    QAction* paste = menu.addAction(glyphIcon(QStringLiteral("📥")), QStringLiteral("Paste"));
     paste->setEnabled(!QApplication::clipboard()->text().isEmpty());
     connect(paste, &QAction::triggered, this, &TerminalWidget::paste);
 
-    QAction* selectAllAct = menu.addAction(QStringLiteral("Select All"));
+    QAction* selectAllAct = menu.addAction(glyphIcon(QStringLiteral("🔲")), QStringLiteral("Select All"));
     connect(selectAllAct, &QAction::triggered, this, &TerminalWidget::selectAll);
 
-    QAction* findAct = menu.addAction(QStringLiteral("Find…"));
+    QAction* findAct = menu.addAction(glyphIcon(QStringLiteral("🔍")), QStringLiteral("Find…"));
     connect(findAct, &QAction::triggered, this, &TerminalWidget::showFindBar);
 
     menu.addSeparator();
-    QAction* clear = menu.addAction(QStringLiteral("Clear Scrollback"));
+    QAction* clear = menu.addAction(glyphIcon(QStringLiteral("🧹")), QStringLiteral("Clear Scrollback"));
     clear->setEnabled(m_vt.scrollbackCount() > 0);
     connect(clear, &QAction::triggered, this, &TerminalWidget::clearScrollback);
 
