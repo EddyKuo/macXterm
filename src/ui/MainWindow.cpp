@@ -553,6 +553,18 @@ void MainWindow::importSharedSessions() {
 void MainWindow::buildToolbar() {
     auto* tb = addToolBar(QStringLiteral("Main"));
     tb->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);   // show glyph + label
+    // Give the flat toolbar buttons visible hover / pressed / checked feedback.
+    // Grey rgba() tints read correctly over both light and dark themes; the
+    // checked tint (blue) marks the MultiExec toggle when it's active.
+    tb->setStyleSheet(QStringLiteral(
+        "QToolBar { spacing: 2px; padding: 2px; }"
+        "QToolButton { border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; }"
+        "QToolButton:hover { background: rgba(127,127,127,0.18);"
+        "                    border-color: rgba(127,127,127,0.35); }"
+        "QToolButton:pressed { background: rgba(127,127,127,0.38);"
+        "                      border-color: rgba(127,127,127,0.55); }"
+        "QToolButton:checked { background: rgba(64,132,255,0.30);"
+        "                      border-color: rgba(64,132,255,0.60); }"));
     auto* newShell = tb->addAction(glyphIcon(QStringLiteral("🖥️")), QStringLiteral("New Shell"));
     connect(newShell, &QAction::triggered, this, [this] { openLocalShell(); });
 
