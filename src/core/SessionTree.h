@@ -55,6 +55,34 @@ QStringList folderNames(const QList<Session>& sessions);
 // param wins; otherwise it defaults from the session type. Pure/testable.
 QString sessionGlyph(const Session& s);
 
+// ── Session-tree edit operations (pure; back the right-click context menu) ──
+// These mutate a flat session list exactly the way MobaXterm's bookmark context
+// menu does, encapsulating the collision / uniqueness / move rules that the UI
+// would otherwise duplicate. Kept in core so the rules are unit-tested without
+// the tree widget (see [[testable-core-architecture]]).
+
+// Rename a session. Fails (returns false, list untouched) if newName is blank
+// after trimming, if it collides with a *different* existing session, or if
+// oldName is absent. Renaming to the same name is a successful no-op.
+bool renameSessionInList(QList<Session>& list, const QString& oldName, const QString& newName);
+
+// Set a session's "folder" param (blank = move to the loose top level). Returns
+// false if the named session is absent.
+bool moveSessionToFolder(QList<Session>& list, const QString& name, const QString& folder);
+
+// Set a session's "icon" glyph (blank clears it, reverting to the type default).
+// Returns false if the named session is absent.
+bool setSessionIcon(QList<Session>& list, const QString& name, const QString& icon);
+
+// Rename a folder: every session filed under oldFolder is moved to newFolder
+// (blank newFolder empties them to the top level). Returns the number of
+// sessions changed (0 if none matched oldFolder).
+int renameFolderInList(QList<Session>& list, const QString& oldFolder, const QString& newFolder);
+
+// A unique display name for a duplicated session: "<base> (copy)", then
+// "<base> (copy 2)", "<base> (copy 3)", … skipping any name already present.
+QString uniqueCopyName(const QList<Session>& list, const QString& base);
+
 // Case-insensitive match of a session against a free-text filter query, testing
 // the fields a user would search the bookmark tree by: name, host, username and
 // folder. An empty/blank query matches everything. Pure — backs the tree's live

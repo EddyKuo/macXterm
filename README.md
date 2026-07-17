@@ -28,7 +28,7 @@ all in one native application, on **macOS, Linux, and Windows**.
 - **Graphical SFTP & FTP browsers** — drag-and-drop transfer, follow-the-terminal's-folder, double-click **remote edit & auto-resave**, recursive folder transfer with a cancelable progress bar.
 - **SSH ecosystem** — jump hosts, agent auth, X11 forwarding, compression, keepalive, run-a-remote-command, and local/remote/**dynamic (SOCKS)** tunnels (RDP/VNC can route through a jump host too).
 - **Remote desktops** — **RDP** via FreeRDP (resolution, clipboard/drive/audio redirection, NLA) and **VNC** via a from-scratch MIT RFB client with **Raw / CopyRect / RRE / Hextile / ZRLE** decoding — both fully interactive (mouse + keyboard), with a view-only mode.
-- **Organized session tree** — folders + per-bookmark icons, a **live filter box** (name/host/user/folder), an encrypted vault, and imports from OpenSSH `~/.ssh/config` and `MobaXterm.ini`.
+- **Organized session tree** — folders + per-bookmark icons, a **live filter box** (name/host/user/folder), a **right-click context menu** (edit/rename/duplicate/move-to-folder/set-icon/copy-SSH-command/delete), an encrypted vault, and imports from OpenSSH `~/.ssh/config` and `MobaXterm.ini`.
 - **Built-in light servers** — TFTP, HTTP, FTP, Telnet, CRON, **NFSv3 (read/write)**, and SSH/SFTP — launched from the toolbar, with no runtime cap.
 - **Network toolbox** — port scanner, subnet/CIDR sweep, packet capture (`libpcap`), SSH key generation, image viewer, text & folder diff, and a live remote CPU/RAM/NET monitor bar.
 

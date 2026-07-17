@@ -61,6 +61,9 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
+#include <QInputDialog>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QStandardPaths>
 #include <QDir>
 #include <QSettings>
@@ -677,38 +680,137 @@ void MainWindow::deleteSession(const QString& name) {
     reloadSessionTree();
 }
 
+void MainWindow::openSessionEditor(const core::Session& seed, const QString& replaceName) {
+    // Shared editor path for both "Edit…" (replaceName set) and "New session…"
+    // (replaceName empty). Seeds the dialog, and on accept saves the result,
+    // removing the original first when editing so a rename doesn't leave a dup.
+    SessionDialog dlg(this);
+    dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
+    dlg.setSession(seed);
+    if (dlg.exec() != QDialog::Accepted) return;
+    if (!replaceName.isEmpty()) deleteSession(replaceName);
+    addAndSaveSession(dlg.session());
+}
+
 void MainWindow::showTreeContextMenu(const QPoint& pos) {
     QTreeWidgetItem* item = m_tree->itemAt(pos);
-    if (!item) return;
-    const QString name = item->text(0);
-    const core::Session* s = m_sessions.findSession(name);
-
     QMenu menu(this);
-    if (s) {
+
+    // Classify the clicked row: a session stashes its exact name in UserRole; the
+    // root has no parent; anything else is a folder whose label is its name.
+    const QVariant nameData = item ? item->data(0, Qt::UserRole) : QVariant();
+    const bool isSession = nameData.isValid();
+    const bool isRoot    = item && !item->parent();
+    const bool isFolder  = item && !isSession && !isRoot;
+
+    if (isSession) {
+        const QString name = nameData.toString();
+        const core::Session* s = m_sessions.findSession(name);
+        if (!s) return;
+        const core::Session sc = *s;   // snapshot for the lambdas
+
         QAction* open = menu.addAction(QStringLiteral("Open"));
+        menu.setDefaultAction(open);
         connect(open, &QAction::triggered, this, [this, name] {
             if (const core::Session* sp = m_sessions.findSession(name)) openSession(*sp);
         });
-        QAction* edit = menu.addAction(QStringLiteral("Edit…"));
+        if (sc.type() == core::SessionType::Ssh || sc.type() == core::SessionType::Sftp) {
+            QAction* sftp = menu.addAction(QStringLiteral("Open SFTP browser"));
+            connect(sftp, &QAction::triggered, this, [this, name] {
+                if (const core::Session* sp = m_sessions.findSession(name)) showSftpFor(*sp);
+            });
+        }
+        menu.addSeparator();
+
+        QAction* edit = menu.addAction(QStringLiteral("Edit session…"));
         connect(edit, &QAction::triggered, this, [this, name] {
-            const core::Session* sp = m_sessions.findSession(name);
-            if (!sp) return;
-            SessionDialog dlg(this);
-            dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
-            dlg.setSession(*sp);
-            if (dlg.exec() == QDialog::Accepted) {
-                deleteSession(name);            // remove the old entry
-                addAndSaveSession(dlg.session());  // save the edited one
+            if (const core::Session* sp = m_sessions.findSession(name))
+                openSessionEditor(*sp, name);
+        });
+        QAction* rename = menu.addAction(QStringLiteral("Rename…"));
+        connect(rename, &QAction::triggered, this, [this, name] {
+            bool ok = false;
+            const QString neu = QInputDialog::getText(
+                this, QStringLiteral("Rename session"), QStringLiteral("New name:"),
+                QLineEdit::Normal, name, &ok);
+            if (!ok) return;
+            if (!core::renameSessionInList(m_sessions.sessions(), name, neu)) {
+                QMessageBox::warning(this, QStringLiteral("Rename session"),
+                    QStringLiteral("Name is empty or already in use."));
+                return;
             }
+            persistSessions();
+            reloadSessionTree();
         });
         QAction* dup = menu.addAction(QStringLiteral("Duplicate"));
         connect(dup, &QAction::triggered, this, [this, name] {
             const core::Session* sp = m_sessions.findSession(name);
             if (!sp) return;
             core::Session copy = *sp;
-            copy.setName(name + QStringLiteral(" (copy)"));
+            copy.setName(core::uniqueCopyName(m_sessions.sessions(), name));
             addAndSaveSession(copy);
         });
+        QAction* icon = menu.addAction(QStringLiteral("Set icon…"));
+        connect(icon, &QAction::triggered, this, [this, name, sc] {
+            bool ok = false;
+            const QString glyph = QInputDialog::getText(
+                this, QStringLiteral("Set icon"),
+                QStringLiteral("Icon (an emoji; leave blank to reset):"),
+                QLineEdit::Normal, sc.param(QStringLiteral("icon")), &ok);
+            if (!ok) return;
+            core::setSessionIcon(m_sessions.sessions(), name, glyph);
+            persistSessions();
+            reloadSessionTree();
+        });
+
+        // Move-to-folder submenu: root, each existing folder, then a new one.
+        QMenu* move = menu.addMenu(QStringLiteral("Move to folder"));
+        const QString cur = sc.param(QStringLiteral("folder"));
+        const auto moveTo = [this, name](const QString& folder) {
+            core::moveSessionToFolder(m_sessions.sessions(), name, folder);
+            persistSessions();
+            reloadSessionTree();
+        };
+        QAction* toRoot = move->addAction(QStringLiteral("(No folder)"));
+        toRoot->setCheckable(true);
+        toRoot->setChecked(cur.isEmpty());
+        connect(toRoot, &QAction::triggered, this, [moveTo] { moveTo(QString()); });
+        for (const QString& f : core::folderNames(m_sessions.sessions())) {
+            QAction* a = move->addAction(f);
+            a->setCheckable(true);
+            a->setChecked(f == cur);
+            connect(a, &QAction::triggered, this, [moveTo, f] { moveTo(f); });
+        }
+        move->addSeparator();
+        QAction* newFolder = move->addAction(QStringLiteral("New folder…"));
+        connect(newFolder, &QAction::triggered, this, [this, moveTo] {
+            bool ok = false;
+            const QString f = QInputDialog::getText(
+                this, QStringLiteral("New folder"), QStringLiteral("Folder name:"),
+                QLineEdit::Normal, QString(), &ok);
+            if (ok && !f.trimmed().isEmpty()) moveTo(f);
+        });
+        menu.addSeparator();
+
+        if (!sc.host().isEmpty()) {
+            QAction* copyHost = menu.addAction(QStringLiteral("Copy host address"));
+            connect(copyHost, &QAction::triggered, this, [sc] {
+                QGuiApplication::clipboard()->setText(sc.host());
+            });
+            if (sc.type() == core::SessionType::Ssh) {
+                QAction* copyCmd = menu.addAction(QStringLiteral("Copy SSH command"));
+                connect(copyCmd, &QAction::triggered, this, [sc] {
+                    QString cmd = QStringLiteral("ssh ");
+                    if (!sc.username().isEmpty()) cmd += sc.username() + QLatin1Char('@');
+                    cmd += sc.host();
+                    if (sc.port() > 0 && sc.port() != 22)
+                        cmd += QStringLiteral(" -p %1").arg(sc.port());
+                    QGuiApplication::clipboard()->setText(cmd);
+                });
+            }
+            menu.addSeparator();
+        }
+
         QAction* del = menu.addAction(QStringLiteral("Delete"));
         connect(del, &QAction::triggered, this, [this, name] {
             if (QMessageBox::question(this, QStringLiteral("Delete session"),
@@ -716,7 +818,51 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
                 deleteSession(name);
             }
         });
+    } else if (isFolder) {
+        const QString folder = item->text(0);
+        QAction* add = menu.addAction(QStringLiteral("New session in \"%1\"…").arg(folder));
+        connect(add, &QAction::triggered, this, [this, folder] {
+            core::Session seed(QString(), core::SessionType::Ssh);
+            seed.setParam(QStringLiteral("folder"), folder);
+            openSessionEditor(seed, QString());
+        });
+        QAction* rename = menu.addAction(QStringLiteral("Rename folder…"));
+        connect(rename, &QAction::triggered, this, [this, folder] {
+            bool ok = false;
+            const QString neu = QInputDialog::getText(
+                this, QStringLiteral("Rename folder"), QStringLiteral("New folder name:"),
+                QLineEdit::Normal, folder, &ok);
+            if (!ok || neu.trimmed().isEmpty()) return;
+            core::renameFolderInList(m_sessions.sessions(), folder, neu);
+            persistSessions();
+            reloadSessionTree();
+        });
+        QAction* remove = menu.addAction(QStringLiteral("Remove folder (keep sessions)"));
+        connect(remove, &QAction::triggered, this, [this, folder] {
+            if (QMessageBox::question(this, QStringLiteral("Remove folder"),
+                    QStringLiteral("Move the sessions in \"%1\" to the top level?").arg(folder))
+                    != QMessageBox::Yes) return;
+            core::renameFolderInList(m_sessions.sessions(), folder, QString());
+            persistSessions();
+            reloadSessionTree();
+        });
+        menu.addSeparator();
+        connect(menu.addAction(QStringLiteral("Expand all")), &QAction::triggered,
+                this, [this] { m_tree->expandAll(); });
+        connect(menu.addAction(QStringLiteral("Collapse all")), &QAction::triggered,
+                this, [this] { m_tree->collapseAll(); });
+    } else {   // root or empty space
+        QAction* add = menu.addAction(QStringLiteral("New session…"));
+        connect(add, &QAction::triggered, this, [this] {
+            openSessionEditor(core::Session(QString(), core::SessionType::Ssh), QString());
+        });
+        menu.addSeparator();
+        connect(menu.addAction(QStringLiteral("Expand all")), &QAction::triggered,
+                this, [this] { m_tree->expandAll(); });
+        connect(menu.addAction(QStringLiteral("Collapse all")), &QAction::triggered,
+                this, [this] { m_tree->collapseAll(); });
     }
+
     menu.exec(m_tree->viewport()->mapToGlobal(pos));
 }
 

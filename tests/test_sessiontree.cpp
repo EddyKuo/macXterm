@@ -64,6 +64,50 @@ private slots:
         QVERIFY(!sessionMatchesFilter(s, QStringLiteral("staging"))); // no field matches
     }
 
+    // The pure edit operations that back the tree's right-click context menu.
+    void renameSessionRejectsBlankAndCollision() {
+        QList<Session> list = { mk("alpha", ""), mk("beta", "") };
+        QVERIFY(!renameSessionInList(list, "alpha", "   "));     // blank rejected
+        QVERIFY(!renameSessionInList(list, "alpha", "beta"));    // collision rejected
+        QVERIFY(!renameSessionInList(list, "ghost", "x"));       // missing source
+        QCOMPARE(list[0].name(), QStringLiteral("alpha"));       // unchanged on failure
+        QVERIFY(renameSessionInList(list, "alpha", "alpha"));    // same-name no-op ok
+        QVERIFY(renameSessionInList(list, "alpha", " gamma "));  // trimmed + applied
+        QCOMPARE(list[0].name(), QStringLiteral("gamma"));
+    }
+
+    void moveSessionAndIconEditFolderParam() {
+        QList<Session> list = { mk("a", "Old") };
+        QVERIFY(moveSessionToFolder(list, "a", "  New  "));      // trimmed
+        QCOMPARE(list[0].param("folder"), QStringLiteral("New"));
+        QVERIFY(moveSessionToFolder(list, "a", ""));             // empty = to root
+        QVERIFY(list[0].param("folder").isEmpty());
+        QVERIFY(!moveSessionToFolder(list, "ghost", "X"));
+
+        QVERIFY(setSessionIcon(list, "a", "⭐"));
+        QCOMPARE(sessionGlyph(list[0]), QStringLiteral("⭐"));
+        QVERIFY(setSessionIcon(list, "a", ""));                  // cleared → type default
+        QCOMPARE(sessionGlyph(list[0]), QStringLiteral("🔑"));
+        QVERIFY(!setSessionIcon(list, "ghost", "x"));
+    }
+
+    void renameFolderMovesAllMembers() {
+        QList<Session> list = { mk("a", "Prod"), mk("b", "Prod"), mk("c", "Dev") };
+        QCOMPARE(renameFolderInList(list, "Prod", "Production"), 2);
+        QCOMPARE(list[0].param("folder"), QStringLiteral("Production"));
+        QCOMPARE(list[1].param("folder"), QStringLiteral("Production"));
+        QCOMPARE(list[2].param("folder"), QStringLiteral("Dev"));   // untouched
+        QCOMPARE(renameFolderInList(list, "Nope", "X"), 0);         // no members
+    }
+
+    void uniqueCopyNameSkipsTaken() {
+        QList<Session> list = { mk("host", ""), mk("host (copy)", "") };
+        QCOMPARE(uniqueCopyName(list, "host"), QStringLiteral("host (copy 2)"));
+        list.append(mk("host (copy 2)", ""));
+        QCOMPARE(uniqueCopyName(list, "host"), QStringLiteral("host (copy 3)"));
+        QCOMPARE(uniqueCopyName(list, "fresh"), QStringLiteral("fresh (copy)"));
+    }
+
     // Explicit icon wins; otherwise the glyph defaults from the session type.
     void glyphPrefersExplicitIconThenType() {
         Session custom("x", SessionType::Ssh);

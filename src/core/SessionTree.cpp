@@ -75,6 +75,61 @@ bool sessionMatchesFilter(const Session& s, const QString& query) {
         || has(s.param(QStringLiteral("folder")));
 }
 
+static Session* find(QList<Session>& list, const QString& name) {
+    for (Session& s : list) if (s.name() == name) return &s;
+    return nullptr;
+}
+
+bool renameSessionInList(QList<Session>& list, const QString& oldName, const QString& newName) {
+    const QString target = newName.trimmed();
+    if (target.isEmpty()) return false;
+    Session* self = find(list, oldName);
+    if (!self) return false;
+    if (target == oldName) return true;   // no-op rename
+    // Reject a collision with any *other* session.
+    for (const Session& s : list)
+        if (&s != self && s.name() == target) return false;
+    self->setName(target);
+    return true;
+}
+
+bool moveSessionToFolder(QList<Session>& list, const QString& name, const QString& folder) {
+    Session* s = find(list, name);
+    if (!s) return false;
+    s->setParam(QStringLiteral("folder"), folder.trimmed());
+    return true;
+}
+
+bool setSessionIcon(QList<Session>& list, const QString& name, const QString& icon) {
+    Session* s = find(list, name);
+    if (!s) return false;
+    s->setParam(QStringLiteral("icon"), icon.trimmed());
+    return true;
+}
+
+int renameFolderInList(QList<Session>& list, const QString& oldFolder, const QString& newFolder) {
+    const QString to = newFolder.trimmed();
+    int changed = 0;
+    for (Session& s : list) {
+        if (s.param(QStringLiteral("folder")) == oldFolder) {
+            s.setParam(QStringLiteral("folder"), to);
+            ++changed;
+        }
+    }
+    return changed;
+}
+
+QString uniqueCopyName(const QList<Session>& list, const QString& base) {
+    const auto taken = [&](const QString& n) {
+        for (const Session& s : list) if (s.name() == n) return true;
+        return false;
+    };
+    QString candidate = base + QStringLiteral(" (copy)");
+    for (int n = 2; taken(candidate); ++n)
+        candidate = base + QStringLiteral(" (copy %1)").arg(n);
+    return candidate;
+}
+
 QStringList folderNames(const QList<Session>& sessions) {
     QStringList names;
     for (const Session& s : sessions) {

@@ -54,6 +54,11 @@ When macXterm starts you'll see a three-part window:
   A **filter box** at the top narrows the tree as you type, matching a session's name,
   host, username, or folder (case-insensitive); folders with no surviving match drop out,
   and clearing the box restores the full tree.
+  **Right-click** any row for a context menu of editing actions: on a **session** —
+  Open, Open SFTP browser (SSH/SFTP), Edit, Rename, Duplicate, Set icon, Move to folder
+  (with an inline *New folder…*), Copy host address / Copy SSH command, and Delete; on a
+  **folder** — New session here, Rename folder, Remove folder (keeping its sessions), and
+  Expand/Collapse all; on the **root** — New session and Expand/Collapse all.
 - **Tabbed terminal area** (center) — where each open session lives in its own closable,
   movable tab.
 - **Toolbar** (top) — the main action bar with these buttons:

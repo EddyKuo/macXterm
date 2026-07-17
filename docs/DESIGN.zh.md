@@ -609,8 +609,10 @@ macXterm 在 macOS 與 Linux 上可以建置並通過**完整的 71 個測試套
 - 圖形化 **SFTP 與 FTP 瀏覽器** — 拖放、跟隨終端機所在資料夾、遠端編輯後
   存回、可取消進度的遞迴資料夾傳輸、日期欄位／排序／Home 鍵。
 - 憑證保管庫（AES-GCM + Argon2id/scrypt）、SQLite 儲存區 + known-hosts、
-  **含資料夾／圖示的 session 樹**，配上即時的名稱／主機／使用者／資料夾篩選
-  （純函式 `core::sessionMatchesFilter`）、`ssh_config` 與
+  **含資料夾／圖示的 session 樹**，配上即時的名稱／主機／使用者／資料夾篩選，
+  以及右鍵編輯選單（重新命名／移動／複製／設定圖示／資料夾操作——純函式
+  `core::`：`sessionMatchesFilter`、`renameSessionInList`、`moveSessionToFolder`、
+  `renameFolderInList`、`uniqueCopyName`）、`ssh_config` 與
   `MobaXterm.ini` 匯入。
 - SSH 通道 — local/remote/**dynamic（SOCKS）**（loopback 端到端測試）+
   供 RDP/VNC 使用的跳板主機路由；巨集、快速鍵、CLI 解析。

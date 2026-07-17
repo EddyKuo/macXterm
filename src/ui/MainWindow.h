@@ -52,6 +52,10 @@ private:
     void reloadSessionTree();
     void onTreeActivated(QTreeWidgetItem* item, int column);
     void showTreeContextMenu(const QPoint& pos);
+    // Open the session editor seeded with `seed`; on accept, save the result and
+    // (when replaceName is non-empty) delete the original first so an edit/rename
+    // doesn't leave a duplicate. Shared by Edit… and the New-session entries.
+    void openSessionEditor(const core::Session& seed, const QString& replaceName);
     void addAndSaveSession(const core::Session& s);
     void deleteSession(const QString& name);
     void persistSessions();
