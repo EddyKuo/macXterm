@@ -19,8 +19,11 @@ public:
     // Launch `program` with `args` in a new PTY. Returns false on failure.
     // `argv0`, when non-empty, overrides argv[0] (the exec target stays
     // `program`) — pass "-zsh" etc. to start `program` as a login shell.
+    // `workDir`, when non-empty, is the child's initial working directory; if it
+    // cannot be entered the child keeps the inherited cwd rather than failing.
     bool start(const QString& program, const QStringList& args = {},
-               int cols = 80, int rows = 24, const QString& argv0 = QString());
+               int cols = 80, int rows = 24, const QString& argv0 = QString(),
+               const QString& workDir = QString());
 
     bool isRunning() const { return m_pid > 0; }
     qint64 write(const QByteArray& data);

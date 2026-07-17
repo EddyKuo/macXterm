@@ -1,6 +1,7 @@
 #include "platform/Pty.h"
 #include "connect/LocalShellConnection.h"
 #include <QtTest/QtTest>
+#include <QTemporaryDir>
 
 using namespace macxterm;
 
@@ -41,6 +42,30 @@ private slots:
         // The echoed command and/or its output should appear on the PTY.
         QVERIFY2(collected.contains("MACXTERM_SHELL_OK"), collected.constData());
         conn.disconnectSession();
+    }
+
+    // A non-empty workDir must place the child there (regression: a fresh login
+    // shell otherwise inherits macXterm's cwd — "/" under a Finder launch —
+    // instead of the user's home).
+    void workDirPlacesChildThere() {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        // Compare against the canonical path: /bin/pwd resolves symlinks (macOS
+        // temp dirs live under /var -> /private/var), so we must too.
+        const QString canonical = QFileInfo(tmp.path()).canonicalFilePath();
+        QVERIFY(!canonical.isEmpty());
+
+        platform::Pty pty;
+        QByteArray collected;
+        connect(&pty, &platform::Pty::readyRead,
+                [&](const QByteArray& d) { collected += d; });
+        QVERIFY(pty.start("/bin/pwd", {}, 80, 24, QString(), canonical));
+        QDeadlineTimer deadline(3000);
+        while (!collected.contains(canonical.toUtf8()) && !deadline.hasExpired()) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            QTest::qWait(20);
+        }
+        QVERIFY2(collected.contains(canonical.toUtf8()), collected.constData());
     }
 };
 

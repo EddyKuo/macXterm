@@ -41,7 +41,21 @@ bool LocalShellConnection::connectSession(const core::Session& session) {
     const bool wantLogin = session.param("loginshell", "1") != "0";
     const QString argv0 = wantLogin ? QStringLiteral("-") + QFileInfo(shell).fileName() : QString();
 
-    if (!m_pty.start(shell, {}, m_cols, m_rows, argv0)) {
+    // Start in the user's home unless the session pins a directory. A fresh login
+    // shell inherits macXterm's cwd otherwise — "/" when launched from Finder —
+    // instead of "~". Prefer an explicit session "cwd", then $HOME, then the
+    // account's home from getpwuid (robust under a launchd/Finder launch).
+    QString workDir = session.param("cwd");
+#if !defined(_WIN32)
+    if (workDir.isEmpty()) {
+        const char* home = std::getenv("HOME");
+        if (home && *home) workDir = QString::fromLocal8Bit(home);
+        else if (const passwd* pw = ::getpwuid(::getuid()); pw && pw->pw_dir && *pw->pw_dir)
+            workDir = QString::fromLocal8Bit(pw->pw_dir);
+    }
+#endif
+
+    if (!m_pty.start(shell, {}, m_cols, m_rows, argv0, workDir)) {
         setState(State::Failed);
         emit errorOccurred(QStringLiteral("Failed to start shell: %1").arg(shell));
         return false;

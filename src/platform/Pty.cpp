@@ -20,7 +20,7 @@ Pty::Pty(QObject* parent) : QObject(parent) {}
 Pty::~Pty() { terminate(); }
 
 bool Pty::start(const QString& program, const QStringList& args, int cols, int rows,
-                const QString& /*argv0*/) {
+                const QString& /*argv0*/, const QString& workDir) {
     if (isRunning()) return false;
 
     HANDLE inRead = nullptr, inWrite = nullptr, outRead = nullptr, outWrite = nullptr;
@@ -50,9 +50,18 @@ bool Pty::start(const QString& program, const QStringList& args, int cols, int r
     cmdLine.toWCharArray(cmd.data());
     cmd[cmdLine.size()] = 0;
 
+    // Child's initial working directory (nullptr = inherit ours); see the Unix
+    // path for why a fresh shell must be placed in the user's home explicitly.
+    std::vector<wchar_t> wd;
+    if (!workDir.isEmpty()) {
+        wd.resize(workDir.size() + 1);
+        workDir.toWCharArray(wd.data());
+        wd[workDir.size()] = 0;
+    }
     PROCESS_INFORMATION pi{};
     const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
-                                   EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr,
+                                   EXTENDED_STARTUPINFO_PRESENT, nullptr,
+                                   wd.empty() ? nullptr : wd.data(),
                                    &si.StartupInfo, &pi);
     DeleteProcThreadAttributeList(si.lpAttributeList);
     HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
@@ -131,7 +140,7 @@ Pty::Pty(QObject* parent) : QObject(parent) {}
 Pty::~Pty() { terminate(); }
 
 bool Pty::start(const QString& program, const QStringList& args, int cols, int rows,
-                const QString& argv0) {
+                const QString& argv0, const QString& workDir) {
     if (isRunning()) return false;
 
     struct winsize ws{};
@@ -143,7 +152,12 @@ bool Pty::start(const QString& program, const QStringList& args, int cols, int r
     if (pid < 0) return false;
 
     if (pid == 0) {
-        // Child: exec the shell/program. argv[0] may differ from the exec target
+        // Child: enter the requested working directory first (a login shell does
+        // NOT cd home on its own — the terminal must set it, else a Finder/`open`
+        // launch inherits "/"). Ignore failure and keep the inherited cwd.
+        const QByteArray wd = workDir.toLocal8Bit();
+        if (!wd.isEmpty()) { if (::chdir(wd.constData()) != 0) { /* keep inherited cwd */ } }
+        // Exec the shell/program. argv[0] may differ from the exec target
         // (e.g. "-zsh" to request a login shell that sources the full profile).
         const QByteArray prog = program.toLocal8Bit();
         std::vector<QByteArray> argvStore;
