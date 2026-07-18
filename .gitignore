@@ -1,5 +1,10 @@
 # ── Build output ──
 /build/
+/build-linux/
+/dist/
+# Fetched third-party userland binary (BusyBox, GPL — fetched via
+# scripts/win/fetch-userland.ps1, never committed).
+/assets/win-userland/
 *.o
 *.obj
 *.exe

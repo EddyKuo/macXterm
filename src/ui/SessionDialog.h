@@ -43,6 +43,7 @@ private:
     QLineEdit* m_keyfile = nullptr;
     QLineEdit* m_passphrase = nullptr;
     QLineEdit* m_gateway = nullptr;   // SSH jump host: [user@]host[:port]
+    QComboBox* m_shell = nullptr;     // param "shell" for local Shell sessions (cmd/PowerShell/…)
     QComboBox* m_folder = nullptr;    // param "folder" (bookmark folder; editable)
     QComboBox* m_icon = nullptr;      // param "icon" (emoji shown in the tree)
 

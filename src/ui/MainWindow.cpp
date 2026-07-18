@@ -37,6 +37,9 @@
 #include "core/Settings.h"
 #include "core/TerminalConfig.h"
 #include "core/SshConfigImporter.h"
+#include "core/PuttyImporter.h"
+#include "core/WinScpImporter.h"
+#include "platform/WinIntegration.h"
 #include "core/IniStore.h"
 #include "x11/X11Server.h"
 #include <QTimer>
@@ -62,9 +65,11 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QInputDialog>
+#include <QProcess>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QStandardPaths>
+#include <QCoreApplication>
 #include <QDir>
 #include <QSettings>
 #include <QFont>
@@ -227,6 +232,22 @@ void MainWindow::buildMenus() {
     file->addSeparator();
     file->addAction(glyphIcon(QStringLiteral("📥")), QStringLiteral("Import from ~/.ssh/config"),
                     this, &MainWindow::importSshConfig);
+    file->addAction(glyphIcon(QStringLiteral("🔑")), QStringLiteral("Import from PuTTY"),
+                    this, &MainWindow::importPutty);
+    file->addAction(glyphIcon(QStringLiteral("📁")), QStringLiteral("Import from WinSCP"),
+                    this, &MainWindow::importWinScp);
+#if defined(Q_OS_WIN)
+    // Windows-only session helpers (WSL, the BusyBox local Unix terminal, and shell
+    // integration) — kept off the macOS/Linux menus, which already have native Unix.
+    file->addAction(glyphIcon(QStringLiteral("⚡")), QStringLiteral("New PowerShell Session"),
+                    this, &MainWindow::newPowerShellSession);
+    file->addAction(glyphIcon(QStringLiteral("🐧")), QStringLiteral("New WSL Session…"),
+                    this, &MainWindow::newWslSession);
+    file->addAction(glyphIcon(QStringLiteral("🐚")), QStringLiteral("New Local Unix Terminal"),
+                    this, &MainWindow::newUnixTerminal);
+    file->addAction(glyphIcon(QStringLiteral("🪟")), QStringLiteral("Register with Windows…"),
+                    this, &MainWindow::registerWindowsIntegration);
+#endif
     file->addAction(glyphIcon(QStringLiteral("📤")), QStringLiteral("Export Sessions…"),
                     this, &MainWindow::exportSessions);
     file->addAction(glyphIcon(QStringLiteral("📨")), QStringLiteral("Import Shared Sessions…"),
@@ -452,6 +473,37 @@ QString MainWindow::vaultPath() const {
 
 void MainWindow::openVault() {
     const bool exists = QFileInfo::exists(vaultPath());
+    // On Windows a vault may be DPAPI-bound to the account (no master password).
+    // Try that first for an existing file; it silently no-ops for a password vault.
+    if (exists && core::CredentialVault::dpapiAvailable() && m_vault.loadDpapi(vaultPath())) {
+        m_vaultDpapi = true;
+        m_vaultUnlocked = true;
+        statusBar()->showMessage(
+            QStringLiteral("Vault unlocked (Windows account protection)."), 4000);
+        return;
+    }
+#if defined(_WIN32)
+    if (!exists) {
+        // Offer passwordless, account-bound protection when creating a new vault.
+        const auto choice = QMessageBox::question(this, QStringLiteral("Vault"),
+            QStringLiteral("Protect the vault with your Windows account (DPAPI), so no "
+                           "master password is needed on this machine?"),
+            QMessageBox::Yes | QMessageBox::No);
+        if (choice == QMessageBox::Yes) {
+            m_vault.clear();
+            if (!m_vault.saveDpapi(vaultPath())) {
+                QMessageBox::warning(this, QStringLiteral("Vault"),
+                    QStringLiteral("Could not create a Windows-protected vault."));
+                return;
+            }
+            m_vaultDpapi = true;
+            m_vaultUnlocked = true;
+            statusBar()->showMessage(
+                QStringLiteral("Vault created (Windows account protection)."), 4000);
+            return;
+        }
+    }
+#endif
     VaultDialog dlg(exists ? VaultDialog::Mode::Unlock : VaultDialog::Mode::Create, this);
     if (dlg.exec() != QDialog::Accepted) return;
     const QString pw = dlg.password();
@@ -464,9 +516,16 @@ void MainWindow::openVault() {
         m_vault.clear();
         m_vault.save(vaultPath(), pw);   // create an empty vault
     }
+    m_vaultDpapi = false;
     m_masterPassword = pw;
     m_vaultUnlocked = true;
     statusBar()->showMessage(QStringLiteral("Vault unlocked — session passwords are now stored encrypted."), 4000);
+}
+
+void MainWindow::persistVault() {
+    // Save the vault using whichever protection unlocked it.
+    if (m_vaultDpapi) m_vault.saveDpapi(vaultPath());
+    else m_vault.save(vaultPath(), m_masterPassword);
 }
 
 core::Session MainWindow::resolveSecrets(core::Session s) const {
@@ -495,6 +554,162 @@ void MainWindow::importSshConfig() {
     reloadSessionTree();
     QMessageBox::information(this, QStringLiteral("Import"),
         QStringLiteral("Imported %1 new session(s) from ~/.ssh/config.").arg(added));
+}
+
+void MainWindow::importPutty() {
+    // Windows: read PuTTY's registry sessions. Everywhere: also try the Unix
+    // PuTTY layout (~/.putty/sessions), which some cross-platform setups use.
+    int added = 0;
+    auto merge = [&](const core::SessionFolder& f) {
+        for (const core::Session& s : f.sessions())
+            if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); ++added; }
+    };
+    merge(core::PuttyImporter::importFromRegistry());
+    merge(core::PuttyImporter::importFromDir(QDir::homePath() + QStringLiteral("/.putty/sessions")));
+    persistSessions();
+    reloadSessionTree();
+    QMessageBox::information(this, QStringLiteral("Import"),
+        added ? QStringLiteral("Imported %1 new session(s) from PuTTY.").arg(added)
+              : QStringLiteral("No PuTTY sessions found."));
+}
+
+void MainWindow::importWinScp() {
+    // Windows: read WinSCP's registry sessions; otherwise (or additionally) let the
+    // user pick a WinSCP.ini file.
+    int added = 0;
+    auto merge = [&](const core::SessionFolder& f) {
+        for (const core::Session& s : f.sessions())
+            if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); ++added; }
+    };
+    merge(core::WinScpImporter::importFromRegistry());
+    if (added == 0) {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Select WinSCP.ini"), QString(),
+            QStringLiteral("WinSCP config (WinSCP.ini *.ini);;All files (*)"));
+        if (!path.isEmpty()) merge(core::WinScpImporter::importFile(path));
+    }
+    persistSessions();
+    reloadSessionTree();
+    QMessageBox::information(this, QStringLiteral("Import"),
+        added ? QStringLiteral("Imported %1 new session(s) from WinSCP.").arg(added)
+              : QStringLiteral("No WinSCP sessions found."));
+}
+
+void MainWindow::newPowerShellSession() {
+#if defined(Q_OS_WIN)
+    // Prefer PowerShell 7+ (pwsh), fall back to Windows PowerShell 5.x. Check known
+    // absolute locations too — powershell.exe lives in System32\WindowsPowerShell
+    // which is not always on PATH.
+    QString ps = QStandardPaths::findExecutable(QStringLiteral("pwsh"));
+    if (ps.isEmpty())
+        for (const QString& base : {qEnvironmentVariable("ProgramFiles"),
+                                    qEnvironmentVariable("ProgramW6432")})
+            if (!base.isEmpty()) {
+                const QString cand = base + QStringLiteral("/PowerShell/7/pwsh.exe");
+                if (QFileInfo::exists(cand)) { ps = cand; break; }
+            }
+    if (ps.isEmpty()) ps = QStandardPaths::findExecutable(QStringLiteral("powershell"));
+    if (ps.isEmpty()) {
+        const QString sysroot = qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows"));
+        const QString cand = sysroot + QStringLiteral("/System32/WindowsPowerShell/v1.0/powershell.exe");
+        if (QFileInfo::exists(cand)) ps = cand;
+    }
+    if (ps.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("PowerShell"),
+            QStringLiteral("PowerShell was not found."));
+        return;
+    }
+    ps = QDir::toNativeSeparators(ps);
+    core::Session s(QStringLiteral("PowerShell"), core::SessionType::Shell);
+    s.setParam(QStringLiteral("shell"), ps);
+    s.setParam(QStringLiteral("loginshell"), QStringLiteral("0"));
+    openSession(s);
+#else
+    QMessageBox::information(this, QStringLiteral("PowerShell"),
+        QStringLiteral("PowerShell sessions are a Windows convenience; on macOS/Linux use a local shell."));
+#endif
+}
+
+void MainWindow::newWslSession() {
+#if defined(_WIN32)
+    // Enumerate installed WSL distros (`wsl.exe -l -q`, UTF-16LE output).
+    QProcess p;
+    p.start(QStringLiteral("wsl.exe"), {QStringLiteral("-l"), QStringLiteral("-q")});
+    if (!p.waitForFinished(5000)) {
+        QMessageBox::information(this, QStringLiteral("WSL"),
+            QStringLiteral("WSL is not installed or did not respond."));
+        return;
+    }
+    const QByteArray raw = p.readAllStandardOutput();
+    const QString out = QString::fromUtf16(
+        reinterpret_cast<const char16_t*>(raw.constData()), raw.size() / 2);
+    QStringList distros;
+    for (QString d : out.split(QLatin1Char('\n'))) {
+        d.remove(QLatin1Char('\r')).remove(QChar(0));
+        d = d.trimmed();
+        if (!d.isEmpty()) distros << d;
+    }
+    if (distros.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("WSL"),
+            QStringLiteral("No WSL distributions found."));
+        return;
+    }
+    bool ok = false;
+    const QString distro = QInputDialog::getItem(
+        this, QStringLiteral("New WSL Session"), QStringLiteral("Distribution:"),
+        distros, 0, false, &ok);
+    if (!ok || distro.isEmpty()) return;
+
+    core::Session s(QStringLiteral("WSL: %1").arg(distro), core::SessionType::Shell);
+    s.setParam(QStringLiteral("shell"), QStringLiteral("wsl.exe"));
+    s.setParam(QStringLiteral("shellargs"), QStringLiteral("-d %1").arg(distro));
+    s.setParam(QStringLiteral("loginshell"), QStringLiteral("0"));
+    if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); persistSessions(); reloadSessionTree(); }
+    openSession(s);
+#else
+    QMessageBox::information(this, QStringLiteral("WSL"),
+        QStringLiteral("WSL sessions are only available on Windows."));
+#endif
+}
+
+void MainWindow::newUnixTerminal() {
+#if defined(_WIN32)
+    // Locate a BusyBox — bundled under a "userland" folder next to the exe, or on
+    // PATH — and open it as a local Unix-style terminal (MobaXterm's local shell).
+    QString bb;
+    const QString beside = QCoreApplication::applicationDirPath()
+                           + QStringLiteral("/userland/busybox.exe");
+    if (QFileInfo::exists(beside)) bb = beside;
+    else bb = QStandardPaths::findExecutable(QStringLiteral("busybox"));
+    if (bb.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Local Unix Terminal"),
+            QStringLiteral("BusyBox was not found. Put busybox.exe in a \"userland\" folder "
+                           "next to macXterm.exe (or on PATH) to enable the local Unix terminal."));
+        return;
+    }
+    core::Session s(QStringLiteral("Local Unix Terminal"), core::SessionType::Shell);
+    s.setParam(QStringLiteral("shell"), bb);
+    s.setParam(QStringLiteral("shellargs"), QStringLiteral("ash -l"));
+    s.setParam(QStringLiteral("loginshell"), QStringLiteral("0"));
+    s.setParam(QStringLiteral("cwd"), QDir::homePath());
+    openSession(s);
+#else
+    QMessageBox::information(this, QStringLiteral("Local Unix Terminal"),
+        QStringLiteral("This system already provides a native Unix shell — use a local shell."));
+#endif
+}
+
+void MainWindow::registerWindowsIntegration() {
+    if (!platform::WinIntegration::available()) {
+        QMessageBox::information(this, QStringLiteral("Windows Integration"),
+            QStringLiteral("This action is only available on Windows."));
+        return;
+    }
+    const bool ok = platform::WinIntegration::registerAll();
+    QMessageBox::information(this, QStringLiteral("Windows Integration"),
+        ok ? QStringLiteral("Registered the macxterm: URL protocol and the .mxtsession file "
+                            "association for your account.")
+           : QStringLiteral("Registration failed — could not write to the registry."));
 }
 
 void MainWindow::exportSessions() {
@@ -686,7 +901,7 @@ void MainWindow::addAndSaveSession(const core::Session& sIn) {
     if (!s.param("password").isEmpty() && m_vaultUnlocked) {
         const QString ref = QStringLiteral("session:") + s.name();
         m_vault.setSecret(ref, s.param("password"));
-        m_vault.save(vaultPath(), m_masterPassword);
+        persistVault();
         s.setParam("vault_ref", ref);
         QVariantMap p = s.params();
         p.remove(QStringLiteral("password"));
@@ -912,7 +1127,9 @@ TerminalWidget* MainWindow::makePane(const core::Session& session) {
     switch (session.type()) {
         case core::SessionType::Ssh:    conn = new connect::SshConnection(term);    break;
         case core::SessionType::Telnet: conn = new connect::TelnetConnection(term); break;
+#if defined(MACXTERM_HAVE_SERIALPORT)
         case core::SessionType::Serial: conn = new connect::SerialConnection(term); break;
+#endif
         case core::SessionType::Mosh:   conn = new connect::MoshConnection(term);   break;
         case core::SessionType::Ftp:    conn = new connect::FtpConnection(term);    break;
         case core::SessionType::Rdp:    conn = new connect::RdpConnection(term);    break;

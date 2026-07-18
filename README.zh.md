@@ -13,9 +13,15 @@ SFTP/FTP 瀏覽器**、**SSH 隧道**、**RDP/VNC** 遠端桌面、**X11 轉發*
 全部整合在一個原生應用程式中，支援 **macOS、Linux 與 Windows**。
 
 > **狀態：** 建置乾淨，且**完整的 71 套測試套件**在 macOS 與 Linux 上皆通過
-> （包含針對本機 fixture 的即時 SSH/RDP 端對端測試）。主要目標平台為
-> macOS 與 Linux；Windows 程式碼路徑可編譯，但 ConPTY 本機 shell 尚未
-> 完成。詳見 [Feature coverage](#feature-coverage) 與 [`docs/DESIGN.zh.md`](docs/DESIGN.zh.md) §20。
+> （包含針對本機 fixture 的即時 SSH/RDP 端對端測試）。**完整的應用程式在
+> Windows 上也可以建置、連結並啟動**（MSVC 2022 + Qt 6.8 + vcpkg）。在 Windows 上
+> 已可運作的功能：**ConPTY 本機 shell**（cmd/PowerShell）、透過 Winsock 傳輸的
+> **SSH／SFTP／隧道／SOCKS**、**X11 轉發**（一鍵式 VcXsrv）、**WSL session**、
+> **PuTTY／WinSCP 匯入**、**DPAPI 帳號綁定保管庫**、**NFS 伺服器**、**內嵌
+> SSH/SFTP 伺服器**、`cygpath`／`/drives` 對應，以及 Windows shell 整合。剩餘的
+> 項目僅需外部產物——一個內附的 BusyBox 二進位檔與一張 Authenticode 簽章
+> 憑證——並追蹤於 **[`docs/WINDOWS_SPRINT.md`](docs/WINDOWS_SPRINT.md)**。詳見
+> [Feature coverage](#feature-coverage) 與 [`docs/DESIGN.zh.md`](docs/DESIGN.zh.md) §20。
 
 ---
 
@@ -63,19 +69,23 @@ open ./build/src/macXterm.app        # macOS
 
 | 文件 | 對象 |
 |----------|----------|
+| **[docs/MANUAL.zh.md](docs/MANUAL.zh.md)** | **完整圖解使用說明書** — 含 Windows/PowerShell/WSL 全功能、截圖、疑難排解 |
 | **[docs/USER_GUIDE.zh.md](docs/USER_GUIDE.zh.md)** | 使用 macXterm — session、終端機、SFTP/FTP、隧道、保管庫、工具 |
 | **[docs/BUILD.zh.md](docs/BUILD.zh.md)** | 在 macOS／Linux／Windows 上從原始碼建置 |
 | **[docs/DESIGN.zh.md](docs/DESIGN.zh.md)** | 技術設計 — 架構、模組、協定、資料模型、執行緒、安全性 |
 
 ## Feature coverage
 
-macXterm 涵蓋了 MobaXterm 在**非 Windows** 平台上的功能範圍。以下差距皆為刻意設計：
+macXterm 涵蓋了 MobaXterm 完整的跨平台功能範圍，而僅限 Windows 的功能現在
+正被推向 100% 對等，而非略過：
 
-- **僅限 Windows 的功能**（在 macOS/Linux 上沒有對應項目，或已用其他方式涵蓋）：
-  WSL session（改用本機 Shell）、Cygwin 的 `/drives`·`/registry`·`cygpath` shell
-  擴充功能與 MobApt 套件管理器（macOS/Linux 本身已是 Unix 系統——請使用
-  系統工具／Homebrew）、PuTTY 登錄檔與 WinSCP 匯入，以及 Windows shell／協定
-  處理器。詳見 [`docs/DESIGN.zh.md`](docs/DESIGN.zh.md) §20。
+- **Windows 對等——已實作**（詳見 [`docs/WINDOWS_SPRINT.md`](docs/WINDOWS_SPRINT.md)）：
+  ConPTY 本機 shell（附 cmd/PowerShell/pwsh 選擇器）、透過 Winsock 傳輸的
+  SSH／SFTP／隧道／SOCKS、X11 轉發（一鍵式 VcXsrv）、WSL session、PuTTY 與
+  WinSCP 匯入、DPAPI 保管庫綁定、NFS 與內嵌 SSH/SFTP 伺服器、`cygpath`／`/drives`
+  路徑對應搭配本機 Unix 終端機啟動器，以及 Windows shell 整合皆已可運作。
+  剩餘的項目僅為外部產物——一個內附的 BusyBox 二進位檔與一張 Authenticode
+  簽章憑證。MobApt 套件管理器則予以延後。
 - **需要外部基礎設施才能完成**：XDMCP 交握後的 X-display 重新導向
   （需要真正的顯示管理器），以及一個*內附*的 X.Org 伺服器（macXterm 改為啟動
   平台自身的 X 伺服器——XQuartz／VcXsrv）。

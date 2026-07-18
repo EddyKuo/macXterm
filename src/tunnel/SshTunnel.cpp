@@ -6,14 +6,18 @@
 #include <libssh2.h>
 #include <functional>
 #include <vector>
+#include "platform/Net.h"
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <basetsd.h>
+using ssize_t = SSIZE_T;   // POSIX type used by the shared recv/send relay loops
+#else
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <poll.h>
 #endif
 
 namespace macxterm::tunnel {
@@ -26,24 +30,11 @@ bool SshTunnel::isRunning() const {
 }
 quint16 SshTunnel::listenPort() const { return m_server ? m_server->serverPort() : 0; }
 
-#if !defined(_WIN32)
 namespace {
-// Open a raw TCP socket to host:port (blocking). Returns fd or -1.
+// Open a raw TCP socket to host:port (blocking) via the platform net shim
+// (Winsock on Windows / BSD sockets on Unix — identical on Unix). Returns fd/-1.
 int dialTcp(const QByteArray& host, int port) {
-    struct addrinfo hints{}, *res = nullptr;
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host.constData(), QByteArray::number(port).constData(), &hints, &res) != 0)
-        return -1;
-    int fd = -1;
-    for (auto* p = res; p; p = p->ai_next) {
-        fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (fd < 0) continue;
-        if (::connect(fd, p->ai_addr, p->ai_addrlen) == 0) break;
-        ::close(fd); fd = -1;
-    }
-    freeaddrinfo(res);
-    return fd;
+    return platform::net::connectTcp(host.constData(), port);
 }
 
 // Authenticate a freshly-handshaken session with the Session's credentials.
@@ -64,9 +55,7 @@ bool authSession(LIBSSH2_SESSION* sess, const core::Session& srv) {
 void pumpRelay(int clientFd, LIBSSH2_CHANNEL* chan, const std::atomic<bool>* stopping) {
     char buf[16384];
     while (!stopping->load()) {
-        struct pollfd pfd{clientFd, POLLIN, 0};
-        const int pr = ::poll(&pfd, 1, 20);
-        if (pr > 0 && (pfd.revents & POLLIN)) {
+        if (platform::net::pollReadable(clientFd, 20) > 0) {
             const ssize_t n = ::recv(clientFd, buf, sizeof(buf), 0);
             if (n <= 0) break;
             int off = 0;
@@ -97,12 +86,12 @@ void relayWorker(core::Session sshServer, Tunnel tunnel, int clientFd,
     QByteArray targetHost = tunnel.targetHost.toUtf8();
     int targetPort = tunnel.targetPort;
     if (tunnel.kind == TunnelKind::Dynamic) {
-        if (!socksNegotiate(clientFd, targetHost, targetPort)) { ::close(clientFd); return; }
+        if (!socksNegotiate(clientFd, targetHost, targetPort)) { platform::net::closeSocket(clientFd); return; }
     }
     const int sshFd = dialTcp(sshServer.host().toUtf8(), sshServer.port());
-    if (sshFd < 0) { ::close(clientFd); return; }
+    if (sshFd < 0) { platform::net::closeSocket(clientFd); return; }
     LIBSSH2_SESSION* sess = libssh2_session_init();
-    if (!sess) { ::close(sshFd); ::close(clientFd); return; }
+    if (!sess) { platform::net::closeSocket(sshFd); platform::net::closeSocket(clientFd); return; }
     libssh2_session_set_blocking(sess, 1);
     bool ok = libssh2_session_handshake(sess, sshFd) == 0 && authSession(sess, sshServer);
     LIBSSH2_CHANNEL* chan = ok
@@ -114,8 +103,8 @@ void relayWorker(core::Session sshServer, Tunnel tunnel, int clientFd,
         libssh2_channel_free(chan);
     }
     if (sess) { libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); }
-    ::close(sshFd);
-    ::close(clientFd);
+    platform::net::closeSocket(sshFd);
+    platform::net::closeSocket(clientFd);
 }
 
 // Single-threaded listener for Remote (-R) tunnels. libssh2 sessions are not
@@ -127,11 +116,11 @@ void remoteListenerWorker(core::Session sshServer, Tunnel tunnel,
     const int sshFd = dialTcp(sshServer.host().toUtf8(), sshServer.port());
     if (sshFd < 0) { report(QStringLiteral("Remote tunnel: SSH connect failed")); return; }
     LIBSSH2_SESSION* sess = libssh2_session_init();
-    if (!sess) { ::close(sshFd); return; }
+    if (!sess) { platform::net::closeSocket(sshFd); return; }
     libssh2_session_set_blocking(sess, 1);
     if (!(libssh2_session_handshake(sess, sshFd) == 0 && authSession(sess, sshServer))) {
         report(QStringLiteral("Remote tunnel: SSH auth failed"));
-        libssh2_session_free(sess); ::close(sshFd); return;
+        libssh2_session_free(sess); platform::net::closeSocket(sshFd); return;
     }
     int boundPort = 0;
     const QByteArray bindAddr = tunnel.bindAddr.toUtf8();
@@ -141,7 +130,7 @@ void remoteListenerWorker(core::Session sshServer, Tunnel tunnel,
     if (!listener) {
         report(QStringLiteral("Remote tunnel: server refused to listen on port %1")
                    .arg(tunnel.bindPort));
-        libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); ::close(sshFd);
+        libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); platform::net::closeSocket(sshFd);
         return;
     }
     libssh2_session_set_blocking(sess, 0);
@@ -169,8 +158,7 @@ void remoteListenerWorker(core::Session sshServer, Tunnel tunnel,
             }
             // local fd -> channel
             if (!dead) {
-                struct pollfd pfd{pairs[i].fd, POLLIN, 0};
-                if (::poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN)) {
+                if (platform::net::pollReadable(pairs[i].fd, 0) > 0) {
                     const ssize_t n = ::recv(pairs[i].fd, buf, sizeof(buf), 0);
                     if (n <= 0) dead = true;
                     else {
@@ -186,23 +174,21 @@ void remoteListenerWorker(core::Session sshServer, Tunnel tunnel,
             }
             if (dead || libssh2_channel_eof(pairs[i].chan)) {
                 libssh2_channel_free(pairs[i].chan);
-                ::close(pairs[i].fd);
+                platform::net::closeSocket(pairs[i].fd);
                 pairs.erase(pairs.begin() + i);
             } else {
                 ++i;
             }
         }
-        struct pollfd sp{sshFd, POLLIN, 0};
-        ::poll(&sp, 1, pairs.empty() ? 50 : 5);   // avoid busy-spin
+        platform::net::pollReadable(sshFd, pairs.empty() ? 50 : 5);   // avoid busy-spin
     }
-    for (auto& p : pairs) { libssh2_channel_free(p.chan); ::close(p.fd); }
+    for (auto& p : pairs) { libssh2_channel_free(p.chan); platform::net::closeSocket(p.fd); }
     libssh2_channel_forward_cancel(listener);
     libssh2_session_disconnect(sess, "bye");
     libssh2_session_free(sess);
-    ::close(sshFd);
+    platform::net::closeSocket(sshFd);
 }
 } // namespace
-#endif
 
 bool SshTunnel::start(const core::Session& sshServer, const Tunnel& tunnel) {
     stop();
@@ -210,14 +196,12 @@ bool SshTunnel::start(const core::Session& sshServer, const Tunnel& tunnel) {
     m_tunnel = tunnel;
     m_stopping = false;
 
-#if !defined(_WIN32)
     if (tunnel.kind == TunnelKind::Remote) {
         m_remoteListener = std::make_shared<std::thread>(
             remoteListenerWorker, m_sshServer, m_tunnel, &m_stopping,
             [this](QString m) { emit error(m); });
         return true;
     }
-#endif
 
     // Local + Dynamic both listen locally.
     m_server = new QTcpServer(this);
@@ -239,15 +223,15 @@ void SshTunnel::stop() {
     m_remoteListener.reset();
 }
 
-#if !defined(_WIN32)
 void SshTunnel::onNewConnection() {
     while (m_server && m_server->hasPendingConnections()) {
         QTcpSocket* client = m_server->nextPendingConnection();
         const auto fd = client->socketDescriptor();
         if (fd < 0) { client->deleteLater(); continue; }
         // Duplicate the descriptor so the worker owns a stable fd, then drop the
-        // QTcpSocket wrapper (it must not keep reading on the UI thread).
-        const int dupFd = ::dup(int(fd));
+        // QTcpSocket wrapper (it must not keep reading on the UI thread). On Windows
+        // dupSocket uses WSADuplicateSocket; on Unix it is dup().
+        const int dupFd = platform::net::dupSocket(int(fd));
         client->close();
         client->deleteLater();
         if (dupFd < 0) continue;
@@ -255,10 +239,5 @@ void SshTunnel::onNewConnection() {
             relayWorker, m_sshServer, m_tunnel, dupFd, &m_stopping));
     }
 }
-#else
-void SshTunnel::onNewConnection() {
-    emit error(QStringLiteral("SSH tunnels on Windows not yet wired"));
-}
-#endif
 
 } // namespace macxterm::tunnel

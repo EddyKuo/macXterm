@@ -32,7 +32,19 @@ if(APPLE)
   endforeach()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network SerialPort Sql Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Sql Test)
+
+# QtSerialPort (optional) — Serial session type when present. Kept optional so the
+# app still builds against a Qt kit that omits the SerialPort add-on (as WebEngine
+# already is); a release/parity build should install it to enable Serial sessions.
+find_package(Qt6 QUIET COMPONENTS SerialPort)
+if(Qt6SerialPort_FOUND)
+  set(MACXTERM_SERIALPORT ON)
+  message(STATUS "QtSerialPort found — Serial session enabled")
+else()
+  set(MACXTERM_SERIALPORT OFF)
+  message(STATUS "QtSerialPort not found — Serial session disabled in this build")
+endif()
 
 # QtWebEngine (optional) — embedded browser session type when present.
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets)

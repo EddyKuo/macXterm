@@ -11,7 +11,7 @@
 #define NTDDI_VERSION 0x0A000006   // NTDDI_WIN10_RS5 (10.0.17763)
 #endif
 #include <windows.h>   // ConPTY is declared here once the version macros above are set
-#include <QWinEventNotifier>
+#include <QMetaObject>  // queued marshaling of reader-thread output onto the GUI thread
 #include <vector>
 
 namespace macxterm::platform {
@@ -75,8 +75,37 @@ bool Pty::start(const QString& program, const QStringList& args, int cols, int r
     m_process = pi.hProcess;
     m_pid = static_cast<long long>(pi.dwProcessId);
     CloseHandle(pi.hThread);
-    // Poll the read pipe from a timer-driven pump (ConPTY has no waitable handle
-    // for readability); a background reader thread is the production approach.
+
+    // ConPTY has no waitable handle that signals "output is readable", so the
+    // production approach is a dedicated reader thread doing a blocking
+    // ReadFile() loop. Each chunk is marshaled back onto the GUI thread with a
+    // queued invocation so readyRead() is emitted in the object's own thread
+    // (Qt signals across threads must be queued). When the pipe closes — the
+    // child exited and ConPTY tore down its write end — we wait on the process
+    // for its real exit code and emit finished(), unless terminate() asked us
+    // to stop (m_readerStop), in which case we exit silently.
+    m_readerStop.store(false);
+    HANDLE outRead2 = m_outRead, proc = m_process;
+    m_reader = std::thread([this, outRead2, proc]() {
+        char buf[4096];
+        for (;;) {
+            DWORD read = 0;
+            const BOOL ok = ReadFile(outRead2, buf, sizeof(buf), &read, nullptr);
+            if (!ok || read == 0) break;                 // pipe closed / broken → child gone
+            if (m_readerStop.load()) return;             // being torn down; drop the data
+            QByteArray chunk(buf, static_cast<int>(read));
+            QMetaObject::invokeMethod(this, [this, chunk]() {
+                emit readyRead(chunk);
+            }, Qt::QueuedConnection);
+        }
+        if (m_readerStop.load()) return;                 // terminate() owns the finished() path
+        DWORD code = 0;
+        WaitForSingleObject(proc, INFINITE);
+        GetExitCodeProcess(proc, &code);
+        QMetaObject::invokeMethod(this, [this, code]() {
+            emit finished(static_cast<int>(code));
+        }, Qt::QueuedConnection);
+    });
     return true;
 }
 
@@ -109,7 +138,12 @@ void Pty::onReadable() {
 }
 
 void Pty::terminate() {
+    // Tell the reader thread to stay quiet, then close the pseudoconsole first:
+    // that breaks the output pipe and unblocks the thread's ReadFile so it can
+    // exit. Only then is it safe to join it and close the handles it referenced.
+    m_readerStop.store(true);
     if (m_hpc) { ClosePseudoConsole(m_hpc); m_hpc = nullptr; }
+    if (m_reader.joinable()) m_reader.join();
     if (m_inWrite) { CloseHandle(m_inWrite); m_inWrite = nullptr; }
     if (m_outRead) { CloseHandle(m_outRead); m_outRead = nullptr; }
     if (m_process) { CloseHandle(m_process); m_process = nullptr; }

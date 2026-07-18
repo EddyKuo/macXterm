@@ -1,6 +1,7 @@
 #include "connect/LocalShellConnection.h"
 #include <QProcessEnvironment>
 #include <QFileInfo>
+#include <QStringList>
 #include <cstdlib>
 
 #if !defined(_WIN32)
@@ -31,8 +32,17 @@ bool LocalShellConnection::connectSession(const core::Session& session) {
         if (const passwd* pw = ::getpwuid(::getuid()); pw && pw->pw_shell && *pw->pw_shell)
             shell = QString::fromLocal8Bit(pw->pw_shell);
     }
-#endif
     if (shell.isEmpty()) shell = QStringLiteral("/bin/sh");
+#else
+    // Windows has no $SHELL; the command processor lives in %ComSpec% (cmd.exe).
+    // Honour it, then fall back to the well-known path. (PowerShell/pwsh can be
+    // selected explicitly via the session's "shell" parameter.)
+    if (shell.isEmpty()) {
+        const char* comspec = std::getenv("ComSpec");
+        shell = comspec ? QString::fromLocal8Bit(comspec)
+                        : QStringLiteral("C:\\Windows\\System32\\cmd.exe");
+    }
+#endif
 
     // Start it as a LOGIN shell (argv[0] = "-<name>") so it sources the user's
     // full profile (~/.zprofile, /etc/profile, …). This gives the same PATH and
@@ -53,9 +63,23 @@ bool LocalShellConnection::connectSession(const core::Session& session) {
         else if (const passwd* pw = ::getpwuid(::getuid()); pw && pw->pw_dir && *pw->pw_dir)
             workDir = QString::fromLocal8Bit(pw->pw_dir);
     }
+#else
+    // Start a fresh Windows shell in the user's profile directory rather than
+    // wherever macXterm itself was launched from.
+    if (workDir.isEmpty()) {
+        const char* profile = std::getenv("USERPROFILE");
+        if (profile && *profile) workDir = QString::fromLocal8Bit(profile);
+    }
 #endif
 
-    if (!m_pty.start(shell, {}, m_cols, m_rows, argv0, workDir)) {
+    // Optional extra arguments for the shell program (space-separated). Used e.g.
+    // for WSL sessions on Windows ("wsl.exe" + "-d <distro>"). Empty by default, so
+    // ordinary local shells are unaffected.
+    QStringList shellArgs;
+    if (const QString sa = session.param("shellargs"); !sa.isEmpty())
+        shellArgs = sa.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+
+    if (!m_pty.start(shell, shellArgs, m_cols, m_rows, argv0, workDir)) {
         setState(State::Failed);
         emit errorOccurred(QStringLiteral("Failed to start shell: %1").arg(shell));
         return false;

@@ -1,40 +1,27 @@
 #include "tools/SshExec.h"
+#include "platform/Net.h"
 #include <libssh2.h>
-
 #if !defined(_WIN32)
-#include <sys/socket.h>
-#include <netdb.h>
-#include <unistd.h>
+#include <sys/types.h>   // ssize_t (used by run(); was previously via <unistd.h>)
 #endif
 
 namespace macxterm::tools {
 
 SshExec::~SshExec() { disconnectSession(); }
 
-#if !defined(_WIN32)
+// Socket transport via the platform net shim (Winsock on Windows, BSD sockets on
+// Unix — identical behaviour on Unix). connectTcp mirrors the old inline
+// getaddrinfo/socket/connect loop (AF_UNSPEC, first working address wins).
 bool SshExec::connectSession(const core::Session& s) {
     disconnectSession();
-    struct addrinfo hints{}, *res = nullptr;
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(s.host().toUtf8().constData(),
-                    QByteArray::number(s.port()).constData(), &hints, &res) != 0)
-        return false;
-    int fd = -1;
-    for (auto* p = res; p; p = p->ai_next) {
-        fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (fd < 0) continue;
-        if (::connect(fd, p->ai_addr, p->ai_addrlen) == 0) break;
-        ::close(fd); fd = -1;
-    }
-    freeaddrinfo(res);
+    const int fd = platform::net::connectTcp(s.host().toUtf8().constData(), s.port());
     if (fd < 0) return false;
 
     LIBSSH2_SESSION* sess = libssh2_session_init();
-    if (!sess) { ::close(fd); return false; }
+    if (!sess) { platform::net::closeSocket(fd); return false; }
     libssh2_session_set_blocking(sess, 1);
     if (libssh2_session_handshake(sess, fd) != 0) {
-        libssh2_session_free(sess); ::close(fd); return false;
+        libssh2_session_free(sess); platform::net::closeSocket(fd); return false;
     }
     const QByteArray user = s.username().toUtf8();
     const QByteArray key = s.param("keyfile").toUtf8();
@@ -47,13 +34,10 @@ bool SshExec::connectSession(const core::Session& s) {
         const QByteArray pw = s.param("password").toUtf8();
         authed = libssh2_userauth_password(sess, user.constData(), pw.constData()) == 0;
     }
-    if (!authed) { libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); ::close(fd); return false; }
+    if (!authed) { libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess); platform::net::closeSocket(fd); return false; }
     m_session = sess; m_sock = fd;
     return true;
 }
-#else
-bool SshExec::connectSession(const core::Session&) { return false; }
-#endif
 
 QByteArray SshExec::run(const QString& command) {
     if (!m_session) return {};
@@ -77,9 +61,7 @@ void SshExec::disconnectSession() {
         libssh2_session_free(m_session);
         m_session = nullptr;
     }
-#if !defined(_WIN32)
-    if (m_sock >= 0) { ::close(m_sock); m_sock = -1; }
-#endif
+    if (m_sock >= 0) { platform::net::closeSocket(m_sock); m_sock = -1; }
 }
 
 } // namespace macxterm::tools

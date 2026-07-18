@@ -1,4 +1,5 @@
 #include "sftp/SftpConnection.h"
+#include "platform/Net.h"
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 #include <QFile>
@@ -69,8 +70,48 @@ bool SftpConnection::connectSession(const core::Session& s) {
     return true;
 }
 #else
-bool SftpConnection::connectSession(const core::Session&) {
-    emit error(QStringLiteral("SFTP on Windows not yet wired")); return false;
+// Windows: same libssh2 flow as the Unix path, over a Winsock socket from the
+// platform net shim. (Kept separate from the Unix code so macOS/Linux stay
+// byte-identical.)
+bool SftpConnection::connectSession(const core::Session& s) {
+    disconnectSession();
+    const QByteArray host = s.host().toUtf8();
+    const int fd = platform::net::connectTcp(host.constData(), s.port());
+    if (fd < 0) { emit error(QStringLiteral("SFTP: connection refused")); return false; }
+
+    LIBSSH2_SESSION* sess = libssh2_session_init();
+    if (!sess) { platform::net::closeSocket(fd); return false; }
+    libssh2_session_set_blocking(sess, 1);
+    if (libssh2_session_handshake(sess, fd) != 0) {
+        emit error(QStringLiteral("SFTP: SSH handshake failed"));
+        libssh2_session_free(sess); platform::net::closeSocket(fd); return false;
+    }
+    const QByteArray user = s.username().toUtf8();
+    const QByteArray keyfile = s.param("keyfile").toUtf8();
+    bool authed;
+    if (!keyfile.isEmpty()) {
+        const QByteArray pass = s.param("passphrase").toUtf8();
+        authed = libssh2_userauth_publickey_fromfile(
+                     sess, user.constData(), nullptr, keyfile.constData(), pass.constData()) == 0;
+    } else {
+        const QByteArray pw = s.param("password").toUtf8();
+        authed = libssh2_userauth_password(sess, user.constData(), pw.constData()) == 0;
+    }
+    if (!authed) {
+        emit error(QStringLiteral("SFTP: authentication failed"));
+        libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess);
+        platform::net::closeSocket(fd);
+        return false;
+    }
+    m_sftp = libssh2_sftp_init(sess);
+    if (!m_sftp) {
+        emit error(QStringLiteral("SFTP: failed to start subsystem"));
+        libssh2_session_disconnect(sess, "bye"); libssh2_session_free(sess);
+        platform::net::closeSocket(fd);
+        return false;
+    }
+    m_session = sess; m_sock = fd; m_ownsSession = true;
+    return true;
 }
 #endif
 
@@ -79,9 +120,8 @@ void SftpConnection::disconnectSession() {
     if (m_ownsSession && m_session) {
         libssh2_session_disconnect(m_session, "bye");
         libssh2_session_free(m_session);
-#if !defined(_WIN32)
-        if (m_sock >= 0) ::close(m_sock);
-#endif
+        // net::closeSocket is ::close on Unix (identical) / closesocket on Windows.
+        if (m_sock >= 0) platform::net::closeSocket(m_sock);
     }
     m_session = nullptr; m_sock = -1; m_ownsSession = false;
 }

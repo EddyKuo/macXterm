@@ -34,6 +34,15 @@ public:
     bool save(const QString& path, const QString& masterPassword) const;
     bool load(const QString& path, const QString& masterPassword);
 
+    // Windows only: save/load the vault protected by DPAPI (CryptProtectData),
+    // binding it to the current Windows user account with no master password
+    // (MobaXterm-style "master password not required" convenience). Opt-in — the
+    // portable password vault remains the default. Returns false on non-Windows
+    // or on any DPAPI error.
+    bool saveDpapi(const QString& path) const;
+    bool loadDpapi(const QString& path);
+    static bool dpapiAvailable();
+
 private:
     QMap<QString, QString> m_secrets;
 };

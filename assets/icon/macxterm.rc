@@ -1,0 +1,4 @@
+// Windows application icon resource. The first ICON in the executable becomes the
+// Explorer / taskbar / title-bar icon. macxterm.ico is a multi-resolution icon
+// (16–256 px) generated from assets/icon/macxterm.iconset via Pillow.
+IDI_ICON1 ICON "macxterm.ico"

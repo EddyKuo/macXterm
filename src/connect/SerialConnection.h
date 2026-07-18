@@ -1,4 +1,8 @@
 #pragma once
+// Serial support is optional: it compiles only when the Qt SerialPort add-on is
+// present (MACXTERM_HAVE_SERIALPORT, set by CMake). When absent, this header is
+// empty and Serial sessions fall back to a local shell (see MainWindow::makePane).
+#if defined(MACXTERM_HAVE_SERIALPORT)
 #include "connect/IConnection.h"
 #include <QSerialPort>
 
@@ -37,3 +41,4 @@ private:
 };
 
 } // namespace macxterm::connect
+#endif // MACXTERM_HAVE_SERIALPORT

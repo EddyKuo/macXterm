@@ -44,6 +44,12 @@ private:
     void buildToolbar();
     void buildMenus();
     void importSshConfig();
+    void importPutty();
+    void importWinScp();
+    void newWslSession();
+    void newPowerShellSession();
+    void newUnixTerminal();
+    void registerWindowsIntegration();
     void exportSessions();
     void importSharedSessions();
     void detachCurrentTab();
@@ -65,6 +71,7 @@ private:
     void applyShortcuts();          // push registry sequences onto the actions
     void editShortcuts();           // open the shortcut editor dialog
     void openVault();                               // create/unlock the vault
+    void persistVault();                            // save via DPAPI or master password
     QString vaultPath() const;
     core::Session resolveSecrets(core::Session s) const;  // inject vault password
     // If the session has a "gateway" param, open a local SSH tunnel through the
@@ -101,6 +108,7 @@ private:
     core::CredentialVault m_vault;
     QString m_masterPassword;
     bool m_vaultUnlocked = false;
+    bool m_vaultDpapi = false;   // vault is DPAPI-bound (Windows) rather than password
     core::ShortcutRegistry m_shortcuts;
     QHash<QString, QAction*> m_shortcutActions;
     bool m_multiExec = false;

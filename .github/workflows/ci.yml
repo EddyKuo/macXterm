@@ -31,19 +31,52 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev libvterm-dev libssh2-1-dev ninja-build
+          sudo apt-get install -y libssl-dev libvterm-dev libssh2-1-dev libssh-dev ninja-build
 
       # --- macOS deps ---
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install openssl@3 libvterm libssh2 ninja
+        run: brew install openssl@3 libvterm libssh2 libssh ninja
 
-      # --- Windows deps (vcpkg) ---
+      # --- Windows: MSVC env, vcpkg deps, and vendored libvterm ---
+      # libvterm has NO vcpkg port, so it is vendored from the neovim fork and
+      # compiled to a static vterm.lib (see scripts/win/build-libvterm.ps1).
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install deps (Windows)
         if: runner.os == 'Windows'
-        run: vcpkg install openssl libvterm libssh2
+        run: vcpkg install openssl libssh2 zlib pkgconf --triplet x64-windows
 
-      - name: Configure
+      - name: Vendor libvterm (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/neovim/libvterm.git "$env:RUNNER_TEMP/libvterm"
+          ./scripts/win/build-libvterm.ps1 -Src "$env:RUNNER_TEMP/libvterm" -Out "$env:RUNNER_TEMP/libvterm/_build"
+
+      # libssh (server-capable) has no vcpkg port that reliably downloads; vendor +
+      # build it so the embedded SSH/SFTP server is compiled + tested on Windows too.
+      - name: Vendor libssh (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/win/build-libssh.ps1 -Out "$env:RUNNER_TEMP/libssh"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          "-DVTERM_LIB=$env:RUNNER_TEMP/libvterm/_build/vterm.lib"
+          "-DVTERM_INCLUDE=$env:RUNNER_TEMP/libvterm/include"
+          "-DSSH_LIB=$env:RUNNER_TEMP/libssh/_build/src/ssh.lib"
+          "-DSSH_INCLUDE=$env:RUNNER_TEMP/libssh/include;$env:RUNNER_TEMP/libssh/_build/include"
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build

@@ -46,11 +46,41 @@ sudo apt install libfreerdp-dev libpcap-dev   # optional — real RDP / packet c
 
 ### Windows
 
-Install Qt 6 (online installer) and the vcpkg packages `openssl`, `libvterm`,
-`libssh2` (and optionally `freerdp`). The pseudo-terminal layer uses **ConPTY**
-and the SSH transport uses **Winsock** — both live behind `#if defined(_WIN32)`
-in `src/platform/` and `src/connect/`. ConPTY requires Windows 10 (RS5) SDK
-headers, which the source configures automatically.
+**Validated build (MSVC 2022 + Qt 6.8 + vcpkg).** This recipe builds, links, and
+launches `macXterm.exe` today; see [WINDOWS_SPRINT.md](WINDOWS_SPRINT.md) for the
+feature-parity roadmap (SSH is still stubbed on Windows — top-priority W2.1).
+
+1. **Toolchain:** Visual Studio 2022 **Build Tools** with the *Desktop C++*
+   workload (MSVC 14.4x + Windows 10/11 SDK), CMake, and Ninja.
+2. **Qt:** install Qt 6.8 `msvc2022_64` (the SerialPort add-on is optional — the
+   build disables the Serial session when it is absent).
+3. **vcpkg deps:** `openssl`, `libssh2[core,openssl,zlib]`, `zlib`, `pkgconf`
+   (triplet `x64-windows`). Run vcpkg **from inside a `vcvars64.bat` shell** so it
+   uses the Build Tools instance — empty `Professional`/`Enterprise` shells confuse
+   its auto-detection.
+4. **libvterm is NOT in vcpkg** — vendor it. The neovim fork's `src/*.c` (9 files,
+   with pre-generated `.inc` encoding tables) compiles to a static `vterm.lib` with
+   MSVC directly; pass its paths via `-DVTERM_LIB=` / `-DVTERM_INCLUDE=`.
+5. **libssh (server-capable) is optional** — enables the embedded SSH/SFTP server. Its
+   vcpkg port downloads from `libssh.org`, which is not always reachable; vendor it from
+   the GitHub mirror instead with `scripts/win/build-libssh.ps1` and pass
+   `-DSSH_LIB=` / `-DSSH_INCLUDE=`. Omit these to build without the embedded server.
+
+```bat
+:: from an x64 Native Tools (vcvars64) prompt, with Ninja on PATH
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows ^
+  -DCMAKE_PREFIX_PATH=C:/Qt/6.8.1/msvc2022_64 ^
+  -DVTERM_LIB=<vendored>/vterm.lib -DVTERM_INCLUDE=<vendored>/include ^
+  -DSSH_LIB=<vendored>/ssh.lib "-DSSH_INCLUDE=<libssh>/include;<libssh>/_build/include"
+cmake --build build --parallel
+windeployqt --release build/src/macXterm.exe   :: stage the Qt DLLs to run it
+```
+
+ConPTY (`src/platform/Pty.cpp`) requires Windows 10 (RS5) SDK headers, which the
+source configures automatically. The local shell defaults to `%ComSpec%`
+(cmd.exe) starting in `%USERPROFILE%`.
 
 ## Configure, build, test
 

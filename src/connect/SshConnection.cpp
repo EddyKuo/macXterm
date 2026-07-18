@@ -1,29 +1,45 @@
 #include "connect/SshConnection.h"
+#include "platform/Net.h"
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QString>
 #include <QByteArray>
 #include <libssh2.h>
 #include <cstdio>
+#include <cstring>
+#include <cstdlib>
 #include <thread>
 #include <atomic>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <windows.h>   // Sleep — the jump-relay idle wait
+#else
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <cstring>
-#include <cstdlib>
 #include <ctime>
 #endif
 
 namespace macxterm::connect {
 
-#if !defined(_WIN32)
 namespace {
+#if defined(_WIN32)
+// Windows: the local X server (VcXsrv / Xming) listens on TCP 6000+N. DISPLAY is
+// typically "localhost:0" / "127.0.0.1:0". Returns a connected fd or -1.
+int connectLocalXServer() {
+    const char* disp = std::getenv("DISPLAY");
+    QString d = (disp && *disp) ? QString::fromLocal8Bit(disp) : QStringLiteral("127.0.0.1:0");
+    const int colon = d.lastIndexOf(':');
+    QString host = colon >= 0 ? d.left(colon) : d;
+    const int display = colon >= 0 ? d.mid(colon + 1).section('.', 0, 0).toInt() : 0;
+    if (host.isEmpty() || host == QLatin1String("unix")) host = QStringLiteral("127.0.0.1");
+    return platform::net::connectTcp(host.toLocal8Bit().constData(), 6000 + display);
+}
+#else
 // Connect to the *local* X server (where forwarded X apps should appear), based
 // on $DISPLAY. Handles a unix-socket DISPLAY path, ":N" (local unix socket), and
 // "host:N" (TCP 6000+N). Returns a connected fd or -1.
@@ -67,6 +83,7 @@ int connectLocalXServer() {
     if (!ok) { ::close(fd); return -1; }
     return fd;
 }
+#endif
 } // namespace
 
 // libssh2 X11 open callback → hand off to the SshConnection instance.
@@ -75,7 +92,6 @@ static void ssh_x11_cb(LIBSSH2_SESSION*, LIBSSH2_CHANNEL* channel,
     if (abstract && *abstract)
         static_cast<SshConnection*>(*abstract)->acceptX11(channel);
 }
-#endif
 
 SshConnection::SshConnection(QObject* parent) : IConnection(parent) {
     libssh2_init(0);
@@ -86,32 +102,10 @@ SshConnection::~SshConnection() {
     libssh2_exit();
 }
 
-#if defined(_WIN32)
-// TODO(Phase 3): Winsock transport. Header stays cross-platform.
-bool SshConnection::connectSession(const core::Session&) {
-    setState(State::Failed);
-    emit errorOccurred("SSH on Windows not yet implemented");
-    return false;
-}
-bool SshConnection::doHandshakeAndAuth(const core::Session&) { return false; }
-#else
-
+// Open a blocking TCP socket to host:port via the platform net shim (Winsock on
+// Windows, BSD sockets on Unix — identical behaviour on Unix).
 static int openSocket(const QByteArray& host, int port) {
-    struct addrinfo hints{}, *res = nullptr;
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    const QByteArray portStr = QByteArray::number(port);
-    if (getaddrinfo(host.constData(), portStr.constData(), &hints, &res) != 0) return -1;
-    int fd = -1;
-    for (auto* p = res; p; p = p->ai_next) {
-        fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (fd < 0) continue;
-        if (::connect(fd, p->ai_addr, p->ai_addrlen) == 0) break;
-        ::close(fd);
-        fd = -1;
-    }
-    freeaddrinfo(res);
-    return fd;
+    return platform::net::connectTcp(host.constData(), port);
 }
 
 // SSH-over-SSH gateway state: a gateway session whose direct-tcpip channel to
@@ -146,11 +140,11 @@ int SshConnection::openViaJump(const core::Session& session) {
     const int gwSock = openSocket(gwHost.toUtf8(), gwPort);
     if (gwSock < 0) { emit errorOccurred("Gateway: connect failed"); return -1; }
     LIBSSH2_SESSION* gw = libssh2_session_init();
-    if (!gw) { ::close(gwSock); return -1; }
+    if (!gw) { platform::net::closeSocket(gwSock); return -1; }
     libssh2_session_set_blocking(gw, 1);
     if (libssh2_session_handshake(gw, gwSock) != 0) {
         emit errorOccurred("Gateway: SSH handshake failed");
-        libssh2_session_free(gw); ::close(gwSock); return -1;
+        libssh2_session_free(gw); platform::net::closeSocket(gwSock); return -1;
     }
     // Gateway auth: prefer gateway_* creds, else fall back to the target's.
     const QByteArray gu = gwUser.toUtf8();
@@ -167,7 +161,7 @@ int SshConnection::openViaJump(const core::Session& session) {
     }
     if (!authed) {
         emit errorOccurred("Gateway: authentication failed");
-        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); ::close(gwSock);
+        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); platform::net::closeSocket(gwSock);
         return -1;
     }
     // Open a direct-tcpip channel from the gateway to the real target.
@@ -175,14 +169,14 @@ int SshConnection::openViaJump(const core::Session& session) {
         gw, session.host().toUtf8().constData(), session.port(), "127.0.0.1", 0);
     if (!ch) {
         emit errorOccurred("Gateway: could not open channel to target");
-        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); ::close(gwSock);
+        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); platform::net::closeSocket(gwSock);
         return -1;
     }
     // Bridge the channel to a socketpair; hand one end to the target session.
     int sp[2];
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sp) != 0) {
+    if (platform::net::socketPair(sp) != 0) {
         libssh2_channel_free(ch);
-        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); ::close(gwSock);
+        libssh2_session_disconnect(gw, "bye"); libssh2_session_free(gw); platform::net::closeSocket(gwSock);
         return -1;
     }
     libssh2_session_set_blocking(gw, 0);
@@ -194,7 +188,7 @@ int SshConnection::openViaJump(const core::Session& session) {
     JumpRelay* jr = m_jump;
     jr->pump = std::thread([jr] {
         char buf[16384];
-        ::fcntl(jr->pumpEnd, F_SETFL, O_NONBLOCK);
+        platform::net::setNonBlocking(jr->pumpEnd);
         while (!jr->stop.load()) {
             bool idle = true;
             // socketpair -> channel
@@ -213,7 +207,13 @@ int SshConnection::openViaJump(const core::Session& session) {
             const ssize_t n = libssh2_channel_read(jr->gwChannel, buf, sizeof(buf));
             if (n > 0) { idle = false; ::send(jr->pumpEnd, buf, n, 0); }
             else if (n == 0 && libssh2_channel_eof(jr->gwChannel)) break;
-            if (idle) { struct timespec ts{0, 3'000'000}; nanosleep(&ts, nullptr); }
+            if (idle) {
+#if defined(_WIN32)
+                Sleep(3);
+#else
+                struct timespec ts{0, 3'000'000}; nanosleep(&ts, nullptr);
+#endif
+            }
         }
     });
     return sp[0];   // target session's socket fd
@@ -301,6 +301,8 @@ bool SshConnection::connectSession(const core::Session& session) {
     m_session = libssh2_session_init_ex(nullptr, nullptr, nullptr, this);
     if (!m_session) { setState(State::Failed); return false; }
     libssh2_session_set_blocking(m_session, 1);
+    // X11 forwarding: relay forwarded X connections to the local X server
+    // (XQuartz on macOS, native on Linux, VcXsrv/Xming on Windows).
     libssh2_session_callback_set(m_session, LIBSSH2_CALLBACK_X11,
                                  reinterpret_cast<void*>(&ssh_x11_cb));
     // Optional transport compression (must be requested before the handshake).
@@ -315,7 +317,8 @@ bool SshConnection::connectSession(const core::Session& session) {
     libssh2_channel_request_pty_ex(m_channel, "xterm-256color", 14, nullptr, 0,
                                    m_cols, m_rows, 0, 0);
 
-    // Optional X11 forwarding (Architecture §6.3 / research §1.3).
+    // Optional X11 forwarding (Architecture §6.3 / research §1.3). On Windows this
+    // needs a running local X server (VcXsrv); it no-ops gracefully if absent.
     if (session.param("x11", "1") != "0") {
         libssh2_channel_x11_req(m_channel, 0);
     }
@@ -354,14 +357,13 @@ bool SshConnection::connectSession(const core::Session& session) {
 
     // Switch to non-blocking and drive reads via the Qt event loop.
     libssh2_session_set_blocking(m_session, 0);
-    fcntl(m_sock, F_SETFL, O_NONBLOCK);
+    platform::net::setNonBlocking(m_sock);
     m_notifier = new QSocketNotifier(m_sock, QSocketNotifier::Read, this);
     connect(m_notifier, &QSocketNotifier::activated, this, &SshConnection::onSocketReadable);
 
     setState(State::Connected);
     return true;
 }
-#endif // !_WIN32
 
 void SshConnection::onSocketReadable() {
     if (!m_channel) return;
@@ -383,7 +385,6 @@ void SshConnection::onSocketReadable() {
     }
 }
 
-#if !defined(_WIN32)
 void SshConnection::acceptX11(LIBSSH2_CHANNEL* channel) {
     const int xfd = connectLocalXServer();
     if (xfd < 0) {
@@ -391,7 +392,7 @@ void SshConnection::acceptX11(LIBSSH2_CHANNEL* channel) {
         libssh2_channel_free(channel);
         return;
     }
-    fcntl(xfd, F_SETFL, O_NONBLOCK);
+    platform::net::setNonBlocking(xfd);
     auto* n = new QSocketNotifier(xfd, QSocketNotifier::Read, this);
     connect(n, &QSocketNotifier::activated, this, &SshConnection::onX11SocketReadable);
     m_x11.push_back({channel, xfd, n});
@@ -426,7 +427,7 @@ void SshConnection::pumpX11() {
         }
         if (dead || libssh2_channel_eof(it->chan)) {
             it->notifier->setEnabled(false); it->notifier->deleteLater();
-            ::close(it->xsock);
+            platform::net::closeSocket(it->xsock);
             libssh2_channel_free(it->chan);
             it = m_x11.erase(it);
         } else {
@@ -434,11 +435,6 @@ void SshConnection::pumpX11() {
         }
     }
 }
-#else
-void SshConnection::acceptX11(LIBSSH2_CHANNEL*) {}
-void SshConnection::onX11SocketReadable() {}
-void SshConnection::pumpX11() {}
-#endif
 
 qint64 SshConnection::send(const QByteArray& data) {
     if (!m_channel) return -1;
@@ -458,22 +454,19 @@ void SshConnection::disconnectSession() {
 void SshConnection::cleanup() {
     if (m_keepalive) { m_keepalive->stop(); m_keepalive->deleteLater(); m_keepalive = nullptr; }
     if (m_notifier) { m_notifier->setEnabled(false); m_notifier->deleteLater(); m_notifier = nullptr; }
-#if !defined(_WIN32)
     for (auto& f : m_x11) {
         if (f.notifier) { f.notifier->setEnabled(false); f.notifier->deleteLater(); }
-        if (f.xsock >= 0) ::close(f.xsock);
+        if (f.xsock >= 0) platform::net::closeSocket(f.xsock);
         if (f.chan) libssh2_channel_free(f.chan);
     }
     m_x11.clear();
-#endif
     if (m_channel) { libssh2_channel_free(m_channel); m_channel = nullptr; }
     if (m_session) {
         libssh2_session_disconnect(m_session, "bye");
         libssh2_session_free(m_session);
         m_session = nullptr;
     }
-#if !defined(_WIN32)
-    if (m_sock >= 0) { ::close(m_sock); m_sock = -1; }
+    if (m_sock >= 0) { platform::net::closeSocket(m_sock); m_sock = -1; }
     if (m_jump) {
         m_jump->stop.store(true);
         if (m_jump->pump.joinable()) m_jump->pump.join();
@@ -482,12 +475,11 @@ void SshConnection::cleanup() {
             libssh2_session_disconnect(m_jump->gwSession, "bye");
             libssh2_session_free(m_jump->gwSession);
         }
-        if (m_jump->pumpEnd >= 0) ::close(m_jump->pumpEnd);
-        if (m_jump->gwSock >= 0) ::close(m_jump->gwSock);
+        if (m_jump->pumpEnd >= 0) platform::net::closeSocket(m_jump->pumpEnd);
+        if (m_jump->gwSock >= 0) platform::net::closeSocket(m_jump->gwSock);
         delete m_jump;
         m_jump = nullptr;
     }
-#endif
 }
 
 } // namespace macxterm::connect

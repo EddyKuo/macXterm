@@ -5,6 +5,9 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QThread>
+#if defined(Q_OS_WIN)
+#include "platform/Net.h"
+#endif
 
 namespace macxterm::x11 {
 
@@ -54,6 +57,10 @@ bool X11Server::isRunning() {
     // macOS XQuartz uses a launchd socket under $DISPLAY only; fall through.
     return !disp.isEmpty() && d.startsWith('/');
 #else
+    // Windows: VcXsrv / Xming listen on TCP 6000+N. Probe :0 directly — more
+    // reliable than the DISPLAY env var, which our process may not have set.
+    const int fd = platform::net::connectTcp("127.0.0.1", 6000);
+    if (fd >= 0) { platform::net::closeSocket(fd); return true; }
     return !disp.isEmpty();
 #endif
 }
@@ -75,6 +82,10 @@ bool X11Server::ensureRunning(QString& outMessage) {
             QElapsedTimer t; t.start();
             while (t.elapsed() < 3000) {
                 if (isRunning()) {
+#if defined(Q_OS_WIN)
+                    // Point forwarded X clients at the freshly-launched local server.
+                    if (qgetenv("DISPLAY").isEmpty()) qputenv("DISPLAY", "localhost:0.0");
+#endif
                     outMessage = QStringLiteral("Launched X server via: %1").arg(cmd);
                     return true;
                 }

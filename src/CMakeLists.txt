@@ -4,6 +4,9 @@ add_library(macxterm_core STATIC
   core/SessionTree.cpp
   core/IniStore.cpp
   core/SshConfigImporter.cpp
+  core/PuttyImporter.cpp
+  core/WinScpImporter.cpp
+  core/CygPath.cpp
   core/CredentialVault.cpp
   core/Settings.cpp
   core/Macro.cpp
@@ -13,6 +16,8 @@ add_library(macxterm_core STATIC
   core/SessionForm.cpp
   core/TerminalConfig.cpp
   platform/Pty.cpp
+  platform/Net.cpp
+  platform/WinIntegration.cpp
   term/ScreenBuffer.cpp
   term/VtEngine.cpp
   term/ColorScheme.cpp
@@ -22,7 +27,6 @@ add_library(macxterm_core STATIC
   connect/SshConnection.cpp
   connect/TelnetProtocol.cpp
   connect/TelnetConnection.cpp
-  connect/SerialConnection.cpp
   connect/FtpConnection.cpp
   connect/RfbProtocol.cpp
   connect/MoshConnection.cpp
@@ -78,13 +82,18 @@ target_link_libraries(macxterm_core PUBLIC
   Qt6::Core
   Qt6::Gui
   Qt6::Network
-  Qt6::SerialPort
   Qt6::Sql
   OpenSSL::Crypto
   ${VTERM_LIB}
   ${SSH2_LIB}
   ZLIB::ZLIB
 )
+
+# Windows system libraries: ws2_32 for the SSH-family Winsock transport
+# (src/platform/Net.cpp), crypt32 for the DPAPI-bound vault (CredentialVault).
+if(WIN32)
+  target_link_libraries(macxterm_core PUBLIC ws2_32 crypt32)
+endif()
 
 if(MACXTERM_FREERDP)
   target_compile_definitions(macxterm_core PUBLIC MACXTERM_HAVE_FREERDP)
@@ -100,6 +109,14 @@ if(MACXTERM_LIBSSH)
   target_compile_definitions(macxterm_core PUBLIC MACXTERM_HAVE_LIBSSH)
   target_include_directories(macxterm_core PUBLIC ${SSH_INCLUDE})
   target_link_libraries(macxterm_core PUBLIC ${SSH_LIB})
+endif()
+
+# QtSerialPort — Serial session type (connect/SerialConnection.cpp). Optional so
+# the app builds against a Qt kit without the SerialPort add-on.
+if(MACXTERM_SERIALPORT)
+  target_sources(macxterm_core PRIVATE connect/SerialConnection.cpp)
+  target_compile_definitions(macxterm_core PUBLIC MACXTERM_HAVE_SERIALPORT)
+  target_link_libraries(macxterm_core PUBLIC Qt6::SerialPort)
 endif()
 
 # libpcap — packet capture (tools/PacketCapture.cpp).
@@ -137,6 +154,14 @@ if(MACXTERM_BUILD_GUI)
       target_sources(macxterm PRIVATE "${MACXTERM_ICNS}")
       set_source_files_properties("${MACXTERM_ICNS}" PROPERTIES
         MACOSX_PACKAGE_LOCATION "Resources")
+    endif()
+  endif()
+  # Embed the Windows app icon via a resource script (Explorer/taskbar/title-bar).
+  if(WIN32)
+    enable_language(RC)
+    set(MACXTERM_RC "${CMAKE_SOURCE_DIR}/assets/icon/macxterm.rc")
+    if(EXISTS "${MACXTERM_RC}")
+      target_sources(macxterm PRIVATE "${MACXTERM_RC}")
     endif()
   endif()
   target_link_libraries(macxterm PRIVATE macxterm_core Qt6::Widgets)

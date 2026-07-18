@@ -3,12 +3,18 @@
 #include <QByteArray>
 #include <QStringList>
 
+#if defined(_WIN32)
+#include <thread>
+#include <atomic>
+#endif
+
 class QSocketNotifier;
 
 namespace macxterm::platform {
 
 // Cross-platform pseudo-terminal abstraction (Architecture §5, PAL).
-// On Unix: forkpty(). On Windows: ConPTY (implemented in Pty_win.cpp — TODO).
+// On Unix: forkpty() + QSocketNotifier. On Windows: ConPTY
+// (CreatePseudoConsole) with a background reader thread — both in Pty.cpp.
 // Emits readyRead() when child output is available; write() sends input.
 class Pty : public QObject {
     Q_OBJECT
@@ -48,6 +54,13 @@ private:
     void* m_inWrite = nullptr;   // HANDLE — write side of child stdin
     void* m_outRead = nullptr;   // HANDLE — read side of child stdout
     void* m_process = nullptr;   // HANDLE — child process
+    // ConPTY has no waitable "readable" handle, so a dedicated background thread
+    // does a blocking ReadFile loop on m_outRead and marshals each chunk back to
+    // the GUI thread via a queued readyRead(). It also waits on the child and
+    // emits finished() once the pipe closes. m_readerStop suppresses that
+    // finished() when we are the ones tearing the PTY down (terminate()).
+    std::thread m_reader;
+    std::atomic<bool> m_readerStop{false};
 #else
     int m_master = -1;
     QSocketNotifier* m_notifier = nullptr;

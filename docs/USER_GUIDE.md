@@ -120,7 +120,14 @@ are shown.
   interactive (mouse + keyboard), with a **view-only** toggle in the Advanced tab.
 - **Browser** — an embedded web view with an address bar.
 - **Shell** — a **local** command shell on your own machine. No host/username needed; this
-  is what the startup tab uses and what **New Shell** opens.
+  is what the startup tab uses and what **New Shell** opens. A **Shell** picker lets you
+  choose the program: on Windows it detects **cmd / PowerShell / pwsh** (and Git-Bash);
+  on macOS/Linux it lists `bash`/`zsh`/`fish`/`sh`. Leave it blank for the platform
+  default (`%ComSpec%`/cmd on Windows, `$SHELL` on Unix).
+
+On **Windows**, *File → New WSL Session…* additionally enumerates your installed WSL
+distributions and opens the chosen one as a ConPTY terminal, and *File → New Local Unix
+Terminal* opens a bundled BusyBox shell when present.
 
 SSH's **Advanced** tab adds compression, X11 forwarding, agent auth/forwarding, a
 **keepalive** interval, a **remote command** to run instead of a login shell, and
@@ -322,9 +329,17 @@ handled. Imported sessions land under an **"Imported (ssh_config)"** folder.
 
 ### PuTTY
 
-macXterm's session store uses an INI-style format aligned with PuTTY's saved-session
-layout. Full PuTTY import is planned and slots into the same importer path used for
-OpenSSH config.
+**File → Import from PuTTY.** On Windows this reads your saved PuTTY sessions from the
+registry (`HKCU\Software\SimonTatham\PuTTY\Sessions`); on macOS/Linux it reads the
+Unix PuTTY layout (`~/.putty/sessions`). Host, port, user, key file, proxy/jump host,
+and serial line/speed are mapped, and the protocol (`ssh`/`telnet`/`rlogin`/`serial`)
+selects the session type. Imported sessions land under an **"Imported (PuTTY)"** folder.
+
+### WinSCP
+
+**File → Import from WinSCP.** On Windows this reads the WinSCP registry sessions; on
+any platform you can point it at a `WinSCP.ini` file. Each session becomes an **SFTP**
+or **FTP** bookmark (per its `FSProtocol`), under **"Imported (WinSCP)"**.
 
 ---
 
@@ -359,7 +374,8 @@ does **not** ship its own X server; instead it integrates the **platform's X ser
 manages the `DISPLAY` handed to forwarded apps:
 
 - **macOS** — **XQuartz**
-- **Windows** — an X server such as **VcXsrv**
+- **Windows** — an X server such as **VcXsrv** (macXterm auto-detects it on TCP 6000
+  and can launch it for you)
 - **Linux** — your **native X.Org** server
 
 Enable **SSH X11 forwarding** in **Settings → X11**, optionally with **Auto-start X
@@ -379,7 +395,7 @@ macXterm is honest about what needs a live peer versus what works entirely on yo
 - **MultiExec** broadcast; **macros** and **shortcuts**
 - **Text/folder diff**, **image viewer**, **port scanner**, **subnet sweep**, and the light
   **TFTP / HTTP / FTP / Telnet / CRON / NFS / SSH** servers
-- OpenSSH `~/.ssh/config` and `MobaXterm.ini` **import**
+- OpenSSH `~/.ssh/config`, `MobaXterm.ini`, **PuTTY**, and **WinSCP** session **import**
 - Tunnel and session **validation** (port-collision and field checks)
 
 **Needs a live remote (or hardware) to exercise end to end:**
@@ -392,12 +408,19 @@ macXterm is honest about what needs a live peer versus what works entirely on yo
 - **Remote monitor** — needs an SSH host to sample
 - **Packet capture** — needs capture permission on a live interface
 
+**Windows.** The full app builds, runs, and reaches feature parity on Windows: the
+**ConPTY local shell** (with a **cmd / PowerShell / pwsh** picker in the session
+dialog), **SSH / SFTP / tunnels / SOCKS** over Winsock, **X11 forwarding** (turnkey
+VcXsrv), **WSL sessions** (*File → New WSL Session*), **PuTTY / WinSCP import**, a
+**DPAPI** account-bound vault, the **NFS** and **embedded SSH/SFTP servers**,
+`cygpath`/`/drives` path mapping with a **Local Unix Terminal** (BusyBox) launcher,
+and **Windows shell integration** (*File → Register with Windows* — `macxterm:` URL
+protocol + `.mxtsession` association). Shipping a bundled BusyBox binary and a
+code-signed installer are the only remaining packaging steps.
+
 **Known gaps.** **XDMCP** completes the discovery/negotiation handshake but does not yet
-redirect the accepted session to a local X server (needs a real display manager);
-**VNC** decodes Raw/CopyRect/RRE/Hextile/ZRLE (Tight is not yet implemented); and on
-**Windows** the ConPTY local shell is incomplete. Windows-only MobaXterm features (WSL,
-Cygwin shell extensions, MobApt, PuTTY-registry import) are intentionally out of scope on
-macOS/Linux by design.
+redirect the accepted session to a local X server (needs a real display manager); and
+**VNC** decodes Raw/CopyRect/RRE/Hextile/ZRLE (Tight is not yet implemented).
 
 **No artificial limits.** Unlike MobaXterm Home, macXterm places **no cap** on the number
 of saved sessions, tunnels, or macros, and no cap on MultiExec panes or the built-in

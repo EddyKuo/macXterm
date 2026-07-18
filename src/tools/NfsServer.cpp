@@ -5,8 +5,12 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
-#include <sys/stat.h>
+#include <sys/stat.h>       // struct stat / _stat64
+#if defined(_WIN32)
+#include <io.h>             // _wchmod
+#else
 #include <unistd.h>
+#endif
 
 namespace macxterm::tools {
 namespace {
@@ -18,35 +22,66 @@ constexpr quint32 NFS3_OK = 0, NFS3ERR_NOENT = 2, NFS3ERR_ACCES = 13;
 // NFS file types.
 constexpr quint32 NF3REG = 1, NF3DIR = 2, NF3LNK = 5;
 
-// Encode an NFSv3 fattr3 from a stat buffer.
-void putFattr3(XdrWriter& w, const struct stat& st) {
-    quint32 type = NF3REG;
-    if (S_ISDIR(st.st_mode)) type = NF3DIR;
-    else if (S_ISLNK(st.st_mode)) type = NF3LNK;
-    w.u32(type);
-    w.u32(st.st_mode & 07777);
-    w.u32(static_cast<quint32>(st.st_nlink));
-    w.u32(st.st_uid);
-    w.u32(st.st_gid);
-    w.u64(static_cast<quint64>(st.st_size));
-    w.u64(static_cast<quint64>(st.st_blocks) * 512);
-    w.u32(0); w.u32(0);                                   // rdev (specdata3)
-    w.u64(static_cast<quint64>(st.st_dev));               // fsid
-    w.u64(static_cast<quint64>(st.st_ino));               // fileid
-#if defined(__APPLE__)
-    const auto at = st.st_atimespec.tv_sec, mt = st.st_mtimespec.tv_sec, ct = st.st_ctimespec.tv_sec;
+// Cross-platform stat snapshot for fattr3 encoding. On Unix it carries the real
+// POSIX fields (byte-identical to the previous direct-stat path); on Windows
+// uid/gid are 0 and blocks are derived from size (Win32 has no POSIX ownership).
+struct NfsStat {
+    quint32 mode = 0, nlink = 1, uid = 0, gid = 0;
+    quint64 size = 0, blocks = 0, dev = 0, ino = 0;
+    qint64 atime = 0, mtime = 0, ctime = 0;
+    bool isDir = false, isLnk = false;
+};
+
+bool nfsStat(const QString& path, NfsStat& s) {
+    if (path.isEmpty()) return false;
+#if defined(_WIN32)
+    struct _stat64 st{};
+    if (_wstat64(reinterpret_cast<const wchar_t*>(path.utf16()), &st) != 0) return false;
+    s.mode = st.st_mode; s.nlink = st.st_nlink;
+    s.size = static_cast<quint64>(st.st_size);
+    s.blocks = (s.size + 511) / 512;
+    s.dev = static_cast<quint64>(st.st_dev); s.ino = static_cast<quint64>(st.st_ino);
+    s.atime = st.st_atime; s.mtime = st.st_mtime; s.ctime = st.st_ctime;
+    s.isDir = (st.st_mode & _S_IFDIR) != 0;
 #else
-    const auto at = st.st_atim.tv_sec, mt = st.st_mtim.tv_sec, ct = st.st_ctim.tv_sec;
+    struct stat st{};
+    if (::stat(path.toUtf8().constData(), &st) != 0) return false;
+    s.mode = st.st_mode; s.nlink = st.st_nlink; s.uid = st.st_uid; s.gid = st.st_gid;
+    s.size = static_cast<quint64>(st.st_size);
+    s.blocks = static_cast<quint64>(st.st_blocks);
+    s.dev = static_cast<quint64>(st.st_dev); s.ino = static_cast<quint64>(st.st_ino);
+#if defined(__APPLE__)
+    s.atime = st.st_atimespec.tv_sec; s.mtime = st.st_mtimespec.tv_sec; s.ctime = st.st_ctimespec.tv_sec;
+#else
+    s.atime = st.st_atim.tv_sec; s.mtime = st.st_mtim.tv_sec; s.ctime = st.st_ctim.tv_sec;
 #endif
-    w.u32(static_cast<quint32>(at)); w.u32(0);
-    w.u32(static_cast<quint32>(mt)); w.u32(0);
-    w.u32(static_cast<quint32>(ct)); w.u32(0);
+    s.isDir = S_ISDIR(st.st_mode); s.isLnk = S_ISLNK(st.st_mode);
+#endif
+    return true;
+}
+
+// Encode an NFSv3 fattr3 from a stat snapshot.
+void putFattr3(XdrWriter& w, const NfsStat& st) {
+    const quint32 type = st.isDir ? NF3DIR : (st.isLnk ? NF3LNK : NF3REG);
+    w.u32(type);
+    w.u32(st.mode & 07777);
+    w.u32(st.nlink);
+    w.u32(st.uid);
+    w.u32(st.gid);
+    w.u64(st.size);
+    w.u64(st.blocks * 512);
+    w.u32(0); w.u32(0);                                   // rdev (specdata3)
+    w.u64(st.dev);                                        // fsid
+    w.u64(st.ino);                                        // fileid
+    w.u32(static_cast<quint32>(st.atime)); w.u32(0);
+    w.u32(static_cast<quint32>(st.mtime)); w.u32(0);
+    w.u32(static_cast<quint32>(st.ctime)); w.u32(0);
 }
 
 // post_op_attr: a "1" flag + fattr3 when the file exists, else "0".
 void putPostOpAttr(XdrWriter& w, const QString& path) {
-    struct stat st{};
-    if (!path.isEmpty() && ::stat(path.toUtf8().constData(), &st) == 0) {
+    NfsStat st;
+    if (nfsStat(path, st)) {
         w.u32(1);
         putFattr3(w, st);
     } else {
@@ -184,8 +219,8 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
 
         if (proc == 1) {                                // GETATTR(fh)
             const QString path = pathForHandle(readFh(&ok));
-            struct stat st{};
-            if (ok && !path.isEmpty() && ::stat(path.toUtf8().constData(), &st) == 0) {
+            NfsStat st;
+            if (ok && nfsStat(path, st)) {
                 w.u32(NFS3_OK); putFattr3(w, st);
             } else w.u32(NFS3ERR_NOENT);
             return w.data();
@@ -194,8 +229,8 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             const QString dir = pathForHandle(readFh(&ok));
             const QString name = r.str(&ok);
             const QString child = QDir(dir).filePath(name);
-            struct stat st{};
-            if (ok && !dir.isEmpty() && ::stat(child.toUtf8().constData(), &st) == 0) {
+            NfsStat st;
+            if (ok && !dir.isEmpty() && nfsStat(child, st)) {
                 w.u32(NFS3_OK);
                 w.opaqueVar(fileHandle(child));         // object fh
                 putPostOpAttr(w, child);                // obj attrs
@@ -250,10 +285,10 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             for (const QString& name : entries) {
                 if (idx++ < cookie) continue;
                 const QString child = QDir(path).filePath(name);
-                struct stat st{};
-                ::stat(child.toUtf8().constData(), &st);
+                NfsStat st;
+                nfsStat(child, st);
                 w.u32(1);                                // value follows
-                w.u64(static_cast<quint64>(st.st_ino ? st.st_ino : idx));   // fileid
+                w.u64(st.ino ? st.ino : idx);            // fileid
                 w.str(name);                             // name
                 w.u64(idx);                              // cookie
                 if (proc == 17) {                        // READDIRPLUS extras
@@ -308,8 +343,25 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             // fails and clears `ok` — a datagram truncated mid-SETATTR therefore
             // never reaches chmod()/truncate() with a bogus (e.g. zero) value.
             if (ok && !path.isEmpty()) {
-                if (setMode) { ::chmod(path.toUtf8().constData(), mode & 07777); has = true; }
-                if (setSize) { ::truncate(path.toUtf8().constData(), static_cast<off_t>(size)); has = true; }
+                if (setMode) {
+#if defined(_WIN32)
+                    // Win32 only distinguishes read-only vs read/write.
+                    _wchmod(reinterpret_cast<const wchar_t*>(path.utf16()),
+                            (mode & 0200) ? (_S_IREAD | _S_IWRITE) : _S_IREAD);
+#else
+                    ::chmod(path.toUtf8().constData(), mode & 07777);
+#endif
+                    has = true;
+                }
+                if (setSize) {
+#if defined(_WIN32)
+                    QFile f(path);
+                    if (f.open(QIODevice::ReadWrite)) f.resize(static_cast<qint64>(size));
+#else
+                    ::truncate(path.toUtf8().constData(), static_cast<off_t>(size));
+#endif
+                    has = true;
+                }
             }
             Q_UNUSED(has);
             w.u32(NFS3_OK); putWccData(w, path);

@@ -13,9 +13,16 @@ an **encrypted credential vault**, and a drawer of **network tools and light ser
 all in one native application, on **macOS, Linux, and Windows**.
 
 > **Status:** builds clean and the **full 71-suite test set passes** on macOS & Linux
-> (incl. live SSH/RDP end-to-end tests against local fixtures). Primary targets are
-> macOS and Linux; the Windows code paths compile but the ConPTY local shell is not yet
-> complete. See [Feature coverage](#feature-coverage) and [`docs/DESIGN.md`](docs/DESIGN.md) §20.
+> (incl. live SSH/RDP end-to-end tests against local fixtures). The **full app builds,
+> links, and launches on Windows** (MSVC 2022 + Qt 6.8 + vcpkg). Working on Windows:
+> the **ConPTY local shell** (cmd/PowerShell), **SSH / SFTP / tunnels / SOCKS** over a
+> Winsock transport, **X11 forwarding** (turnkey VcXsrv), **WSL sessions**, **PuTTY/WinSCP
+> import**, a **DPAPI account-bound vault**, the **NFS server**, the **embedded SSH/SFTP
+> server**, `cygpath`/`/drives` mapping, and Windows shell integration. The remaining
+> items need external artifacts only — a bundled BusyBox binary and an Authenticode
+> signing certificate — and are tracked in
+> **[`docs/WINDOWS_SPRINT.md`](docs/WINDOWS_SPRINT.md)**. See
+> [Feature coverage](#feature-coverage) and [`docs/DESIGN.md`](docs/DESIGN.md) §20.
 
 ---
 
@@ -63,19 +70,23 @@ open ./build/src/macXterm.app        # macOS
 
 | Document | Audience |
 |----------|----------|
+| **[docs/MANUAL.zh.md](docs/MANUAL.zh.md)** | 完整圖解使用說明書（繁體中文）— 含 Windows/PowerShell/WSL 全功能 |
 | **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** | Using macXterm — sessions, terminal, SFTP/FTP, tunnels, vault, tools |
 | **[docs/BUILD.md](docs/BUILD.md)** | Building from source on macOS / Linux / Windows |
 | **[docs/DESIGN.md](docs/DESIGN.md)** | Technical design — architecture, modules, protocols, data model, threading, security |
 
 ## Feature coverage
 
-macXterm covers MobaXterm's **non-Windows** functional surface. The gaps are, by design:
+macXterm covers MobaXterm's full cross-platform functional surface, and the
+Windows-only features are now being driven to 100% parity rather than skipped:
 
-- **Windows-only features** (no macOS/Linux equivalent, or already covered otherwise):
-  WSL sessions (use the local Shell), the Cygwin `/drives`·`/registry`·`cygpath` shell
-  extensions and the MobApt package manager (macOS/Linux are already Unix — use the
-  system tools / Homebrew), PuTTY-registry & WinSCP import, and the Windows shell/protocol
-  handlers. See [`docs/DESIGN.md`](docs/DESIGN.md) §20.
+- **Windows parity — implemented** (see [`docs/WINDOWS_SPRINT.md`](docs/WINDOWS_SPRINT.md)):
+  the ConPTY local shell (with a cmd/PowerShell/pwsh picker), SSH/SFTP/tunnels/SOCKS over
+  a Winsock transport, X11 forwarding (turnkey VcXsrv), WSL sessions, PuTTY & WinSCP
+  import, DPAPI vault binding, the NFS and embedded SSH/SFTP servers, `cygpath`/`/drives`
+  path mapping with a Local Unix Terminal launcher, and Windows shell integration all
+  work. The remaining items are external artifacts only — a bundled BusyBox binary and
+  an Authenticode code-signing certificate. The MobApt package manager is deferred.
 - **Needs external infrastructure to finish**: XDMCP's post-handshake X-display redirection
   (needs a real display manager) and a *bundled* X.Org server (macXterm launches the
   platform's own X server — XQuartz / VcXsrv — instead).

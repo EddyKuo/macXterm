@@ -71,6 +71,9 @@ set(MACXTERM_TESTS
   test_sshserver_sftp
   test_packetcapture
   test_localshell
+  test_cygpath
+  test_puttyimport
+  test_winscpimport
 )
 
 # Separate-process SSH server harness for test_sshserver_sftp (libssh server;

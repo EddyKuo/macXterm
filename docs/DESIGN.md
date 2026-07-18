@@ -594,6 +594,9 @@ isolated behind a process boundary without shipping its binary.
 | Credential store | Portable AES-GCM file, OS keystore optional | Cross-platform parity without binding to any one OS keystore (G2). |
 | KDF | Argon2id, scrypt fallback, id stored in blob | Argon2 needs OpenSSL 3.2+; scrypt keeps older distros working while vaults stay portable. |
 | Persistence | SQLite for non-secrets, separate encrypted vault | Queryable session tree; secrets physically isolated. |
+| Windows deps not in vcpkg | Vendor libvterm (neovim fork) + libssh (GitHub mirror), built at configure time | libvterm has no vcpkg port; libssh's vcpkg port downloads from libssh.org, which is not always reachable. Both build cleanly with the vcpkg toolchain (see `scripts/win/build-*.ps1`). |
+| Windows Unix userland | Invoke a **bundled BusyBox as a separate process** (not linked); fetched via `scripts/win/fetch-userland.ps1`, never committed | Gives a MobaXterm-style local Unix terminal while keeping the "no GPL code *linked*" rule (BusyBox is GPL) — the same process-isolation decision as Mosh. The `core::CygPath` `/drives`↔`C:\` mapping is MIT and in-tree. |
+| Windows SSH-family transport | A thin `platform/Net` shim (WSAStartup / Winsock) under the existing cross-platform `libssh2`/`libssh`; Unix path expands to the identical syscalls | Enables SSH/SFTP/tunnels/X11/server on Windows without forking the protocol code or perturbing macOS/Linux behaviour. |
 
 ---
 
@@ -628,12 +631,34 @@ macXterm builds and passes its **full 71-suite test set** on macOS and Linux
 - **VNC Tight encoding** (another zlib-based codec; ZRLE already covers most servers).
 - **X11 server *bundling*** for turnkey forwarding — macXterm integrates a
   user-provided X server (XQuartz / VcXsrv) instead of shipping X.Org.
-- **Windows ConPTY local shell** — the `_WIN32` PTY path is a stub; other subsystems
-  build on Windows but the local shell there is incomplete.
+- **Bundling** a Windows X server — X11 forwarding on Windows auto-detects and
+  launches a user-installed VcXsrv (turnkey), but *shipping* the VcXsrv binary in the
+  installer is still deferred (a third-party artifact).
 
-**Out of scope (Windows-only)**
-- WSL sessions, the Cygwin `/drives`·`/registry`·`cygpath` extensions, the MobApt
-  package manager, PuTTY-registry/WinSCP import, and the Windows shell/protocol handlers.
+**Windows parity — now in scope (was "out of scope")**
+The Windows-only features that make MobaXterm a Windows product are tracked toward
+100% parity in **[docs/WINDOWS_SPRINT.md](WINDOWS_SPRINT.md)**:
+- **Local ConPTY shell** — ✅ now functional: the `_WIN32` `Pty` runs a background
+  reader thread pumping output into `readyRead()` and emits `finished()` on child
+  exit; `LocalShellConnection` falls back to `%ComSpec%` / `%USERPROFILE%`.
+- **SSH family on Windows** — ✅ now working over a Winsock transport. A new
+  `platform/Net` shim (WSAStartup, connectTcp, closeSocket, setNonBlocking,
+  pollReadable, dupSocket, loopback socketPair) backs `libssh2`, so SSH, SFTP,
+  local/remote/dynamic-SOCKS tunnels, and X11 forwarding all run on Windows. The
+  shim's Unix path is byte-identical to the previous inline syscalls, so macOS/Linux
+  are unchanged.
+- **Other Windows parity landed this session:** WSL sessions (ConPTY + `shellargs`),
+  PuTTY/WinSCP session import, a DPAPI account-bound vault (`CryptProtectData`), a
+  Win32 `_wstat64`→fattr3 mapping that un-stubs the NFS server, `cygpath`/`/drives`
+  path mapping, shell integration (protocol + file assoc), turnkey VcXsrv, and the
+  **embedded SSH/SFTP server** (libssh vendored from its GitHub mirror; `SshServer`
+  ported to a ConPTY shell + Qt-based SFTP, live-verified). Remaining items need
+  external artifacts only (a bundled busybox/VcXsrv binary, a code-signing cert) —
+  see WINDOWS_SPRINT.md.
+- WSL sessions, a bundled Cygwin-style local Unix userland (`/drives`·`cygpath`),
+  PuTTY-registry/WinSCP import, DPAPI vault binding, VcXsrv turnkey X11, and the
+  Windows shell/protocol handlers — planned in Sprints W3–W7.
+- **MobApt** package manager remains deferred pending the W4 userland decision.
 
 ---
 
@@ -646,7 +671,8 @@ macXterm builds and passes its **full 71-suite test set** on macOS and Linux
 | ✅ Multi-protocol | Telnet, Serial, Mosh, RSH/Rlogin (real handshakes), XDMCP (handshake), VNC (Raw→ZRLE), RDP. |
 | ✅ Tools & servers | Scanner, subnet, packet capture, TFTP/HTTP/FTP/Telnet/CRON/NFS/SSH servers, diff, monitor, keygen. |
 | ✅ Terminal & UI polish | Split panes, detachable tabs, per-session settings, folders/icons, in-window menu, true-color, astral glyphs, IME, mouse reporting, scrollback search. |
-| ▢ Remaining protocol depth | XDMCP display redirection, VNC Tight; bundled X server; Windows ConPTY shell. |
+| ▢ Remaining protocol depth | XDMCP display redirection, VNC Tight; bundled X server. |
+| ◐ Windows 100% parity | Full app builds/links/launches on Windows ✅ (MSVC+Qt+vcpkg, vendored libvterm); ConPTY shell ✅. Remaining: Winsock SSH transport (SSH stubbed), WSL, Cygwin-style userland, PuTTY/WinSCP import, DPAPI, VcXsrv — see [WINDOWS_SPRINT.md](WINDOWS_SPRINT.md). |
 | ▢ Packaging | Signed/notarized installers per platform; auto-update. |
 
 ---

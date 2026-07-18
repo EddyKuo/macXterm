@@ -10,6 +10,8 @@
 #include <QGroupBox>
 #include <QTabWidget>
 #include <QScrollArea>
+#include <QStandardPaths>
+#include <QFileInfo>
 #include <QPushButton>
 #include <QFileDialog>
 #include <QDir>
@@ -55,6 +57,60 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_gateway = new QLineEdit(this);
     m_gateway->setPlaceholderText(QStringLiteral("[user@]host[:port] — optional jump host"));
 
+    // Shell program for local Shell sessions (MobaXterm parity). Editable so any
+    // path works; pre-populated with the shells detected on this machine. Empty =
+    // the platform default (%ComSpec%/cmd on Windows, $SHELL on Unix).
+    m_shell = new QComboBox(this);
+    m_shell->setEditable(true);
+    m_shell->addItem(QString());   // blank = default
+    {
+        // Add a shell if the file exists, de-duplicated, stored with native
+        // separators (CreateProcess dislikes forward slashes in the program path).
+        auto addPath = [this](const QString& raw) {
+            if (raw.isEmpty()) return;
+            const QString p = QDir::toNativeSeparators(raw);
+            if (QFileInfo::exists(p) && m_shell->findText(p) < 0) m_shell->addItem(p);
+        };
+        auto addOnPath = [&](const QString& exe) { addPath(QStandardPaths::findExecutable(exe)); };
+#if defined(Q_OS_WIN)
+        // cmd — %ComSpec% (always set) with a System32 fallback.
+        addPath(qEnvironmentVariable("ComSpec"));
+        const QString sysroot = qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows"));
+        addPath(sysroot + QStringLiteral("/System32/cmd.exe"));
+        // Windows PowerShell 5.x — a built-in OS component at a fixed path (may not
+        // be on PATH, so add it by absolute location, not just findExecutable).
+        addPath(sysroot + QStringLiteral("/System32/WindowsPowerShell/v1.0/powershell.exe"));
+        addOnPath(QStringLiteral("powershell"));
+        // PowerShell 7+ (pwsh) — check the usual install roots, then PATH.
+        for (const QString& base : {qEnvironmentVariable("ProgramFiles"),
+                                    qEnvironmentVariable("ProgramW6432"),
+                                    qEnvironmentVariable("ProgramFiles(x86)")})
+            for (const QString& ver : {QStringLiteral("7"), QStringLiteral("6")})
+                if (!base.isEmpty()) addPath(base + QStringLiteral("/PowerShell/") + ver
+                                             + QStringLiteral("/pwsh.exe"));
+        addOnPath(QStringLiteral("pwsh"));
+        // Git Bash.
+        addPath(QStringLiteral("C:/Program Files/Git/bin/bash.exe"));
+        addPath(QStringLiteral("C:/Program Files/Git/usr/bin/bash.exe"));
+#else
+        for (const QString& sh : {QStringLiteral("bash"), QStringLiteral("zsh"),
+                                  QStringLiteral("fish"), QStringLiteral("sh")})
+            addOnPath(sh);
+#endif
+    }
+
+#if defined(Q_OS_WIN)
+    // The Windows dark theme renders combo drop-down arrows almost invisibly, so
+    // editable pickers (Shell / Folder) look like plain text fields and users can't
+    // find the list. Draw a clear arrow so every dropdown is discoverable.
+    setStyleSheet(QStringLiteral(
+        "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
+        " width: 20px; border-left: 1px solid palette(mid); }"
+        "QComboBox::down-arrow { width: 0; height: 0;"
+        " border-left: 5px solid transparent; border-right: 5px solid transparent;"
+        " border-top: 6px solid palette(text); margin-right: 6px; }"));
+#endif
+
     // Bookmark organisation: folder (editable — existing folders are seeded via
     // setKnownFolders) and an optional display icon.
     m_folder = new QComboBox(this);
@@ -76,6 +132,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(QStringLiteral("Private key"), keyRow);
     form->addRow(QStringLiteral("Key passphrase"), m_passphrase);
     form->addRow(QStringLiteral("SSH gateway"), m_gateway);
+    form->addRow(QStringLiteral("Shell"), m_shell);
     form->addRow(QStringLiteral("Folder"), m_folder);
     form->addRow(QStringLiteral("Icon"), m_icon);
 
@@ -191,6 +248,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
         const bool rdp = (t == core::SessionType::Rdp);
         const bool vnc = (t == core::SessionType::Vnc);
         form->setRowVisible(m_password, net && t != core::SessionType::Mosh);
+        form->setRowVisible(m_shell, t == core::SessionType::Shell);   // local shell picker
         form->setRowVisible(keyRow, key);
         form->setRowVisible(m_passphrase, key);
         form->setRowVisible(m_gateway, gateway);
@@ -279,6 +337,7 @@ void SessionDialog::setSession(const core::Session& s) {
     m_keyfile->setText(s.param("keyfile"));
     m_passphrase->setText(s.param("passphrase"));
     m_gateway->setText(s.param("gateway"));
+    m_shell->setCurrentText(s.param("shell"));
     m_folder->setCurrentText(s.param("folder"));
     {
         const QString ic = s.param("icon");
@@ -341,6 +400,9 @@ core::Session SessionDialog::session() const {
     if (!m_keyfile->text().isEmpty())    f.insert("keyfile", m_keyfile->text());
     if (!m_passphrase->text().isEmpty()) f.insert("passphrase", m_passphrase->text());
     if (!m_gateway->text().isEmpty())    f.insert("gateway", m_gateway->text());
+    if (core::sessionTypeFromString(m_type->currentText()) == core::SessionType::Shell
+            && !m_shell->currentText().trimmed().isEmpty())
+        f.insert("shell", m_shell->currentText().trimmed());
     if (!m_folder->currentText().trimmed().isEmpty())
         f.insert("folder", m_folder->currentText().trimmed());
     if (const QString ic = m_icon->currentData().toString(); !ic.isEmpty())

@@ -219,3 +219,61 @@ bool CredentialVault::load(const QString& path, const QString& masterPassword) {
 }
 
 } // namespace macxterm::core
+
+// ── DPAPI-bound vault (Windows) ──
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <dpapi.h>          // CryptProtectData / CryptUnprotectData
+
+namespace macxterm::core {
+namespace { constexpr char kDpapiMagic[8] = {'M','X','V','D','P','A','P','1'}; }
+
+bool CredentialVault::dpapiAvailable() { return true; }
+
+bool CredentialVault::saveDpapi(const QString& path) const {
+    const QByteArray plain = flatten(m_secrets);
+    DATA_BLOB in{ static_cast<DWORD>(plain.size()),
+                  reinterpret_cast<BYTE*>(const_cast<char*>(plain.constData())) };
+    DATA_BLOB out{};
+    if (!CryptProtectData(&in, L"macXterm vault", nullptr, nullptr, nullptr,
+                          CRYPTPROTECT_UI_FORBIDDEN, &out))
+        return false;
+    QByteArray blob(kDpapiMagic, sizeof(kDpapiMagic));
+    blob.append(reinterpret_cast<const char*>(out.pbData), int(out.cbData));
+    LocalFree(out.pbData);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    return f.write(blob) == blob.size();
+}
+
+bool CredentialVault::loadDpapi(const QString& path) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    const QByteArray blob = f.readAll();
+    if (blob.size() < int(sizeof(kDpapiMagic)) ||
+        std::memcmp(blob.constData(), kDpapiMagic, sizeof(kDpapiMagic)) != 0)
+        return false;
+    QByteArray body = blob.mid(sizeof(kDpapiMagic));
+    DATA_BLOB in{ static_cast<DWORD>(body.size()), reinterpret_cast<BYTE*>(body.data()) };
+    DATA_BLOB out{};
+    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
+                            CRYPTPROTECT_UI_FORBIDDEN, &out))
+        return false;
+    QByteArray plain(reinterpret_cast<const char*>(out.pbData), int(out.cbData));
+    LocalFree(out.pbData);
+    unflatten(plain, m_secrets);
+    OPENSSL_cleanse(plain.data(), plain.size());
+    return true;
+}
+
+} // namespace macxterm::core
+#else
+namespace macxterm::core {
+bool CredentialVault::dpapiAvailable() { return false; }
+bool CredentialVault::saveDpapi(const QString&) const { return false; }
+bool CredentialVault::loadDpapi(const QString&) { return false; }
+} // namespace macxterm::core
+#endif

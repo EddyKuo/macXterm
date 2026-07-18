@@ -1,10 +1,16 @@
 #include "tunnel/Socks.h"
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <basetsd.h>
+using ssize_t = SSIZE_T;   // POSIX type used by the (shared) recv/send loop
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
 
 namespace macxterm::tunnel {
 namespace {
@@ -31,7 +37,7 @@ bool socksNegotiate(int fd, QByteArray& outHost, int& outPort) {
         QByteArray methods(nm, 0);
         if (nm && !readN(fd, methods.data(), nm)) return false;
         const unsigned char reply[2] = {0x05, 0x00};   // no authentication
-        ::send(fd, reply, 2, 0);
+        ::send(fd, reinterpret_cast<const char*>(reply), 2, 0);
         // Request: VER CMD RSV ATYP ...
         unsigned char hdr[4];
         if (!readN(fd, reinterpret_cast<char*>(hdr), 4)) return false;
@@ -60,7 +66,7 @@ bool socksNegotiate(int fd, QByteArray& outHost, int& outPort) {
         outPort = (pb[0] << 8) | pb[1];
         // Success reply: VER REP RSV ATYP BND.ADDR(4) BND.PORT(2).
         const unsigned char ok[10] = {0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
-        ::send(fd, ok, 10, 0);
+        ::send(fd, reinterpret_cast<const char*>(ok), 10, 0);
         return true;
     }
 
@@ -83,15 +89,10 @@ bool socksNegotiate(int fd, QByteArray& outHost, int& outPort) {
         }
         // Reply: VN=0 CD=0x5A (granted) + 6 bytes.
         const unsigned char ok[8] = {0x00, 0x5A, 0, 0, 0, 0, 0, 0};
-        ::send(fd, ok, 8, 0);
+        ::send(fd, reinterpret_cast<const char*>(ok), 8, 0);
         return true;
     }
     return false;
 }
 
 } // namespace macxterm::tunnel
-#else
-namespace macxterm::tunnel {
-bool socksNegotiate(int, QByteArray&, int&) { return false; }
-} // namespace macxterm::tunnel
-#endif
