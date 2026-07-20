@@ -7,6 +7,20 @@
 
 <p align="center"><b>English</b> | <a href="README.zh.md">中文</a></p>
 
+<p align="center">
+  <a href="https://github.com/EddyKuo/macXterm/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/EddyKuo/macXterm/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/EddyKuo/macXterm/actions/workflows/release.yml"><img alt="Release" src="https://github.com/EddyKuo/macXterm/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/EddyKuo/macXterm/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/EddyKuo/macXterm?include_prereleases&sort=semver"></a>
+  <a href="https://github.com/EddyKuo/macXterm/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/EddyKuo/macXterm/total"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+  <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white">
+  <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white">
+  <img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white">
+  <img alt="Qt6" src="https://img.shields.io/badge/Qt-6-41CD52?logo=qt&logoColor=white">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-71%20suites-brightgreen">
+  <img alt="Coverage" src="https://img.shields.io/badge/coverage-LLVM%20source--based-informational">
+</p>
+
 macXterm is an all-in-one remote-computing toolbox: a **tabbed terminal**, **graphical
 SFTP/FTP browsers**, **SSH tunnels**, **RDP/VNC** remote desktops, **X11 forwarding**,
 an **encrypted credential vault**, and a drawer of **network tools and light servers** —
