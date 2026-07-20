@@ -38,6 +38,10 @@ private slots:
 private:
     QByteArray fileHandle(const QString& path);   // assign/lookup a 32-byte fh
     QString pathForHandle(const QByteArray& fh) const { return m_handleToPath.value(fh); }
+    // Resolve `name` under `dir`, but only within the export root; escaping
+    // names (e.g. "../../etc") yield an empty string so the caller replies
+    // NOENT/ACCES instead of handing out a path outside the share.
+    QString childWithin(const QString& dir, const QString& name) const;
 
     QUdpSocket* m_nfs = nullptr;
     QUdpSocket* m_portmap = nullptr;

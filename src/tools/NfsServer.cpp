@@ -131,6 +131,17 @@ QByteArray NfsServer::fileHandle(const QString& path) {
     return fh;
 }
 
+QString NfsServer::childWithin(const QString& dir, const QString& name) const {
+    if (dir.isEmpty()) return QString();
+    const QString child = QDir::cleanPath(QDir(dir).filePath(name));
+    // Containment: the resolved path must be the export root itself or live
+    // under it. Without this, "../../etc" cleans to a real /etc on Linux and the
+    // server would resolve/hand out a handle outside the exported directory.
+    if (child == m_export || child.startsWith(m_export + QLatin1Char('/')))
+        return child;
+    return QString();
+}
+
 bool NfsServer::start(const QString& exportDir, quint16 port) {
     stop();
     m_export = QDir::cleanPath(exportDir);
@@ -228,7 +239,7 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
         if (proc == 3) {                                // LOOKUP(dirfh, name)
             const QString dir = pathForHandle(readFh(&ok));
             const QString name = r.str(&ok);
-            const QString child = QDir(dir).filePath(name);
+            const QString child = childWithin(dir, name);
             NfsStat st;
             if (ok && !dir.isEmpty() && nfsStat(child, st)) {
                 w.u32(NFS3_OK);
@@ -390,7 +401,7 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             const QString name = r.str(&ok);
             r.u32(&ok);                                 // createmode (UNCHECKED/GUARDED/EXCLUSIVE)
             skipSattr3(r);
-            const QString child = QDir(dir).filePath(name);
+            const QString child = childWithin(dir, name);
             QFile f(child);
             if (ok && !dir.isEmpty() && f.open(QIODevice::WriteOnly)) {
                 f.close();
@@ -405,7 +416,7 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             const QString dir = pathForHandle(readFh(&ok));
             const QString name = r.str(&ok);
             skipSattr3(r);
-            const QString child = QDir(dir).filePath(name);
+            const QString child = childWithin(dir, name);
             if (ok && !dir.isEmpty() && QDir().mkdir(child)) {
                 w.u32(NFS3_OK);
                 w.u32(1); w.opaqueVar(fileHandle(child));
@@ -417,7 +428,7 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
         if (proc == 12 || proc == 13) {                 // REMOVE / RMDIR (dirfh, name)
             const QString dir = pathForHandle(readFh(&ok));
             const QString name = r.str(&ok);
-            const QString child = QDir(dir).filePath(name);
+            const QString child = childWithin(dir, name);
             const bool done = ok && !dir.isEmpty() &&
                 (proc == 12 ? QFile::remove(child) : QDir().rmdir(child));
             w.u32(done ? NFS3_OK : NFS3ERR_ACCES);
@@ -430,7 +441,7 @@ QByteArray NfsServer::handleDatagram(const QByteArray& request) {
             const QString toDir = pathForHandle(readFh(&ok));
             const QString toName = r.str(&ok);
             const bool done = ok && !fromDir.isEmpty() && !toDir.isEmpty() &&
-                QFile::rename(QDir(fromDir).filePath(fromName), QDir(toDir).filePath(toName));
+                QFile::rename(childWithin(fromDir, fromName), childWithin(toDir, toName));
             w.u32(done ? NFS3_OK : NFS3ERR_ACCES);
             putWccData(w, fromDir);                     // fromdir wcc
             putWccData(w, toDir);                       // todir wcc

@@ -91,11 +91,26 @@ if(NOT WIN32)
   target_link_libraries(sshserver_fixture PRIVATE macxterm_core Qt6::Core)
 endif()
 
+# Integration tests that drive an interactive shell / PTY or bind a live network
+# peer. They pass on macOS/Linux but the headless Windows CI runner has no usable
+# login shell/ConPTY session or bindable peer, so their *runtime* is skipped on
+# Windows. They still COMPILE on Windows (MSVC portability stays covered); only
+# the ctest run is gated. (CMP0057 NEW — IN_LIST — is default at our 3.21 min.)
+set(MACXTERM_WINDOWS_SKIP_TESTS
+  test_pty
+  test_localshell
+  test_x11server
+  test_telnetserver
+)
+
 foreach(t ${MACXTERM_TESTS})
   add_executable(${t} ${t}.cpp)
   target_link_libraries(${t} PRIVATE macxterm_core Qt6::Test)
   if(NOT WIN32)
     add_dependencies(${t} sshserver_fixture)
+  endif()
+  if(WIN32 AND (t IN_LIST MACXTERM_WINDOWS_SKIP_TESTS))
+    continue()   # built for compile-coverage, but not run under ctest on Windows
   endif()
   add_test(NAME ${t} COMMAND ${t})
 endforeach()
