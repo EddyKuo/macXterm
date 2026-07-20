@@ -16,6 +16,36 @@
 
 namespace macxterm::platform {
 
+// Quote one token for a CreateProcessW command line per the MSVCRT parsing
+// rules. Without this, CreateProcessW (called with lpApplicationName == nullptr)
+// splits the string on spaces to find the executable, so a program under
+// "C:\Program Files\macXterm\..." — or any shell/argument path with a space —
+// would be truncated to "C:\Program". Follows the standard backslash/quote
+// escaping algorithm (Microsoft: "Everyone quotes command line arguments the
+// wrong way").
+static QString winQuoteArg(const QString& arg) {
+    if (!arg.isEmpty() && !arg.contains(QLatin1Char(' ')) &&
+        !arg.contains(QLatin1Char('\t')) && !arg.contains(QLatin1Char('"')))
+        return arg;  // no metacharacters → no quoting needed
+    QString out(QLatin1Char('"'));
+    int backslashes = 0;
+    for (const QChar c : arg) {
+        if (c == QLatin1Char('\\')) { ++backslashes; continue; }
+        if (c == QLatin1Char('"')) {
+            out += QString(backslashes * 2 + 1, QLatin1Char('\\'));  // escape the run + the quote
+            out += c;
+            backslashes = 0;
+            continue;
+        }
+        out += QString(backslashes, QLatin1Char('\\'));  // backslashes not before a quote are literal
+        out += c;
+        backslashes = 0;
+    }
+    out += QString(backslashes * 2, QLatin1Char('\\'));  // trailing run doubled before the closing quote
+    out += QLatin1Char('"');
+    return out;
+}
+
 Pty::Pty(QObject* parent) : QObject(parent) {}
 Pty::~Pty() { terminate(); }
 
@@ -44,8 +74,8 @@ bool Pty::start(const QString& program, const QStringList& args, int cols, int r
     UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                               hpc, sizeof(hpc), nullptr, nullptr);
 
-    QString cmdLine = program;
-    for (const QString& a : args) cmdLine += " " + a;
+    QString cmdLine = winQuoteArg(program);
+    for (const QString& a : args) cmdLine += QLatin1Char(' ') + winQuoteArg(a);
     std::vector<wchar_t> cmd(cmdLine.size() + 1);
     cmdLine.toWCharArray(cmd.data());
     cmd[cmdLine.size()] = 0;

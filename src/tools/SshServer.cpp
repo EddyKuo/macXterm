@@ -78,6 +78,9 @@ void runShell(ssh_channel chan) {
     if (cs && *cs) { int n = MultiByteToWideChar(CP_ACP, 0, cs, -1, nullptr, 0);
                      cmd.assign(n ? n - 1 : 0, L'\0');
                      MultiByteToWideChar(CP_ACP, 0, cs, -1, cmd.data(), n); }
+    // Quote the program so CreateProcessW (lpApplicationName == nullptr) doesn't
+    // split a spaced %ComSpec% path on spaces. Single token, no args appended.
+    cmd = L'"' + cmd + L'"';
     std::vector<wchar_t> cmdbuf(cmd.begin(), cmd.end()); cmdbuf.push_back(0);
 
     PROCESS_INFORMATION pi{};
