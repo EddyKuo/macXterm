@@ -1,0 +1,8 @@
+# GitHub Linguist overrides.
+#
+# The icon-preview HTML pages under assets/icon/ are generated design previews
+# (~1.2 MB total) that are not part of the source. Left untouched they dominate
+# GitHub's byte-counted language bar and mislabel this C++ project as "HTML".
+# Mark them generated so Linguist excludes them from the language stats (and
+# collapses them in diffs).
+assets/icon/*.html linguist-generated=true
