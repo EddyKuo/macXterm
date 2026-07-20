@@ -1,0 +1,174 @@
+name: Release
+
+# Build packaged macOS + Windows binaries and attach them to a GitHub Release.
+# Triggered by pushing a version tag (e.g. `v0.1.0-beta`). The three-platform CI
+# (ci.yml) is the merge gate; this workflow is the *distribution* step.
+#
+# Artifacts (UNSIGNED — see README "First launch" note):
+#   macOS   : macXterm-<tag>-macos-arm64.dmg   (macdeployqt bundle)
+#   Windows : macXterm-<tag>-windows-x64.zip    (portable, windeployqt)
+#             macXterm-<tag>-setup.exe          (NSIS installer)
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allow a manual dry-run from the Actions tab (builds artifacts, no Release).
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the Release and upload assets
+
+jobs:
+  # ── macOS: .app bundle → macdeployqt → .dmg ──────────────────────────────
+  macos:
+    name: Package macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.*'
+          modules: 'qtserialport'
+
+      - name: Install deps
+        run: brew install openssl@3 libvterm libssh2 libssh ninja
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMACXTERM_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Bundle + create .dmg
+        run: |
+          APP="build/src/macXterm.app"
+          test -d "$APP" || { echo "app bundle missing at $APP"; exit 1; }
+          # macdeployqt copies Qt frameworks/plugins AND resolves the Homebrew
+          # dylibs (libvterm/libssh2/libssh/libcrypto) into the bundle, then packs
+          # a compressed .dmg.
+          macdeployqt "$APP" -dmg -verbose=1
+          mkdir -p dist
+          mv build/src/macXterm.dmg "dist/macXterm-${GITHUB_REF_NAME}-macos-arm64.dmg"
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  # ── Windows: exe + Qt/vcpkg DLLs → portable zip + NSIS installer ─────────
+  windows:
+    name: Package Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.*'
+          modules: 'qtserialport'
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install deps (vcpkg)
+        run: vcpkg install openssl libssh2 zlib pkgconf --triplet x64-windows
+
+      - name: Vendor libvterm
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/neovim/libvterm.git "$env:RUNNER_TEMP/libvterm"
+          ./scripts/win/build-libvterm.ps1 -Src "$env:RUNNER_TEMP/libvterm" -Out "$env:RUNNER_TEMP/libvterm/_build"
+
+      - name: Vendor libssh
+        shell: pwsh
+        run: ./scripts/win/build-libssh.ps1 -Out "$env:RUNNER_TEMP/libssh"
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMACXTERM_BUILD_TESTS=OFF
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          "-DVTERM_LIB=$env:RUNNER_TEMP/libvterm/_build/vterm.lib"
+          "-DVTERM_INCLUDE=$env:RUNNER_TEMP/libvterm/include"
+          "-DSSH_LIB=$env:RUNNER_TEMP/libssh/_build/src/ssh.lib"
+          "-DSSH_INCLUDE=$env:RUNNER_TEMP/libssh/include;$env:RUNNER_TEMP/libssh/_build/include"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Stage portable tree + zip
+        shell: pwsh
+        run: |
+          $qtBin = Join-Path $env:QT_ROOT_DIR "bin"
+          $vcpkgBin = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\x64-windows\bin"
+          $libsshBin = "$env:RUNNER_TEMP\libssh\_build\src"
+          ./scripts/win/package.ps1 -BuildDir build -QtBin $qtBin -VcpkgBin $vcpkgBin -LibsshBin $libsshBin
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $nsis scripts\win\macxterm.nsi
+
+      - name: Rename artifacts with tag
+        shell: pwsh
+        run: |
+          $tag = "$env:GITHUB_REF_NAME"
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item dist\macXterm-portable.zip "out\macXterm-$tag-windows-x64.zip"
+          if (Test-Path dist\macXterm-setup.exe) {
+            Copy-Item dist\macXterm-setup.exe "out\macXterm-$tag-setup.exe"
+          }
+          Get-ChildItem out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: out/*
+          if-no-files-found: error
+
+  # ── Publish: collect both platforms' artifacts → GitHub Release ─────────
+  release:
+    name: Publish GitHub Release
+    needs: [macos, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          # A tag containing '-' (e.g. v0.1.0-beta) is marked as a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/macos-dmg/*.dmg
+            artifacts/windows-dist/*
+          body: |
+            ## macXterm ${{ github.ref_name }}
+
+            Native cross-platform terminal / MobaXterm-style workspace (Qt + C/C++).
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `macXterm-${{ github.ref_name }}-macos-arm64.dmg` |
+            | Windows (x64, portable) | `macXterm-${{ github.ref_name }}-windows-x64.zip` |
+            | Windows (x64, installer) | `macXterm-${{ github.ref_name }}-setup.exe` |
+
+            ### ⚠️ Unsigned build — first launch
+            These binaries are **not code-signed** yet.
+            - **macOS**: right-click the app → **Open**, or run
+              `xattr -dr com.apple.quarantine /Applications/macXterm.app` to clear Gatekeeper.
+            - **Windows**: SmartScreen may warn — click **More info → Run anyway**.
