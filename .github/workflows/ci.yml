@@ -90,8 +90,11 @@ jobs:
         if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
+      # Linux is capped to 2 parallel jobs: the runner has 16 GB and building the
+      # ~70 Qt test executables at full core count exhausts memory, which the
+      # runner watchdog kills as SIGTERM (exit 143). macOS/Windows build at full.
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel ${{ runner.os == 'Linux' && '2' || '' }}
 
       - name: Test
         working-directory: build
@@ -128,7 +131,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev libvterm-dev libssh2-1-dev ninja-build
       - name: Build
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
+        # Capped to 2 jobs — same 16 GB OOM guard as the matrix Linux build.
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel 2
       - name: Deploy SSH fixture
         run: docker compose -f tests/fixtures/docker-compose.yml up -d && sleep 5
       - name: Run live SSH e2e
