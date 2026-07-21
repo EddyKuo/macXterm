@@ -22,7 +22,7 @@
 namespace macxterm::ui {
 
 SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("Session"));
+    setWindowTitle(tr("Session"));
     auto* form = new QFormLayout;
     m_name = new QLineEdit(this);
     m_type = new QComboBox(this);
@@ -43,7 +43,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
 
     // Private-key file with a Browse button.
     m_keyfile = new QLineEdit(this);
-    auto* browse = new QPushButton(QStringLiteral("Browse…"), this);
+    auto* browse = new QPushButton(tr("Browse…"), this);
     connect(browse, &QPushButton::clicked, this, &SessionDialog::browseKeyFile);
     auto* keyRow = new QWidget(this);
     auto* keyLayout = new QHBoxLayout(keyRow);
@@ -55,7 +55,7 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_passphrase->setEchoMode(QLineEdit::Password);
 
     m_gateway = new QLineEdit(this);
-    m_gateway->setPlaceholderText(QStringLiteral("[user@]host[:port] — optional jump host"));
+    m_gateway->setPlaceholderText(tr("[user@]host[:port] — optional jump host"));
 
     // Shell program for local Shell sessions (MobaXterm parity). Editable so any
     // path works; pre-populated with the shells detected on this machine. Empty =
@@ -117,42 +117,42 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_folder->setEditable(true);
     m_folder->addItem(QString());   // blank = top-level (no folder)
     m_icon = new QComboBox(this);
-    m_icon->addItem(QStringLiteral("(default for type)"), QString());
+    m_icon->addItem(tr("(default for type)"), QString());
     for (const auto& e : {QStringLiteral("🔑"), QStringLiteral("🖥️"), QStringLiteral("🌐"),
                           QStringLiteral("📁"), QStringLiteral("⭐"), QStringLiteral("🐚"),
                           QStringLiteral("🔒"), QStringLiteral("🧪")})
         m_icon->addItem(e, e);
 
-    form->addRow(QStringLiteral("Name"), m_name);
-    form->addRow(QStringLiteral("Type"), m_type);
-    form->addRow(QStringLiteral("Host"), m_host);
-    form->addRow(QStringLiteral("Port"), m_port);
-    form->addRow(QStringLiteral("Username"), m_user);
-    form->addRow(QStringLiteral("Password"), m_password);
-    form->addRow(QStringLiteral("Private key"), keyRow);
-    form->addRow(QStringLiteral("Key passphrase"), m_passphrase);
-    form->addRow(QStringLiteral("SSH gateway"), m_gateway);
-    form->addRow(QStringLiteral("Shell"), m_shell);
-    form->addRow(QStringLiteral("Folder"), m_folder);
-    form->addRow(QStringLiteral("Icon"), m_icon);
+    form->addRow(tr("Name"), m_name);
+    form->addRow(tr("Type"), m_type);
+    form->addRow(tr("Host"), m_host);
+    form->addRow(tr("Port"), m_port);
+    form->addRow(tr("Username"), m_user);
+    form->addRow(tr("Password"), m_password);
+    form->addRow(tr("Private key"), keyRow);
+    form->addRow(tr("Key passphrase"), m_passphrase);
+    form->addRow(tr("SSH gateway"), m_gateway);
+    form->addRow(tr("Shell"), m_shell);
+    form->addRow(tr("Folder"), m_folder);
+    form->addRow(tr("Icon"), m_icon);
 
     // --- Advanced, per-protocol options (backends already read these params) ---
     m_advanced = new QWidget(this);
     m_advForm = new QFormLayout(m_advanced);
-    m_compression  = new QCheckBox(QStringLiteral("Enable compression"), this);
-    m_x11          = new QCheckBox(QStringLiteral("X11 forwarding"), this);
+    m_compression  = new QCheckBox(tr("Enable compression"), this);
+    m_x11          = new QCheckBox(tr("X11 forwarding"), this);
     m_x11->setChecked(true);
-    m_agent        = new QCheckBox(QStringLiteral("Use SSH agent for authentication"), this);
-    m_agentForward = new QCheckBox(QStringLiteral("Forward SSH agent"), this);
+    m_agent        = new QCheckBox(tr("Use SSH agent for authentication"), this);
+    m_agentForward = new QCheckBox(tr("Forward SSH agent"), this);
     m_sshKeepalive = new QSpinBox(this);
     m_sshKeepalive->setRange(0, 86400);
-    m_sshKeepalive->setSuffix(QStringLiteral(" s"));
-    m_sshKeepalive->setSpecialValueText(QStringLiteral("off"));   // 0 = off
+    m_sshKeepalive->setSuffix(tr(" s"));
+    m_sshKeepalive->setSpecialValueText(tr("off"));   // 0 = off
     m_sshRemoteCmd = new QLineEdit(this);
-    m_sshRemoteCmd->setPlaceholderText(QStringLiteral("run a command instead of a login shell"));
-    m_sshStayOpen  = new QCheckBox(QStringLiteral("Keep pane open after command exits"), this);
+    m_sshRemoteCmd->setPlaceholderText(tr("run a command instead of a login shell"));
+    m_sshStayOpen  = new QCheckBox(tr("Keep pane open after command exits"), this);
     m_gwUser       = new QLineEdit(this);
-    m_gwUser->setPlaceholderText(QStringLiteral("gateway username (optional)"));
+    m_gwUser->setPlaceholderText(tr("gateway username (optional)"));
     m_gwPassword   = new QLineEdit(this);
     m_gwPassword->setEchoMode(QLineEdit::Password);
     m_gwPassphrase = new QLineEdit(this);
@@ -164,27 +164,27 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
                                QStringLiteral("1600×900"), QStringLiteral("1440×900"),
                                QStringLiteral("1366×768"), QStringLiteral("1280×1024"),
                                QStringLiteral("1280×800"), QStringLiteral("1024×768")});
-    m_rdpClipboard   = new QCheckBox(QStringLiteral("Redirect clipboard"), this);
+    m_rdpClipboard   = new QCheckBox(tr("Redirect clipboard"), this);
     m_rdpClipboard->setChecked(true);
-    m_rdpDrives      = new QCheckBox(QStringLiteral("Redirect drives"), this);
-    m_rdpAudio       = new QCheckBox(QStringLiteral("Redirect audio"), this);
-    m_rdpNla         = new QCheckBox(QStringLiteral("Network Level Authentication (NLA)"), this);
+    m_rdpDrives      = new QCheckBox(tr("Redirect drives"), this);
+    m_rdpAudio       = new QCheckBox(tr("Redirect audio"), this);
+    m_rdpNla         = new QCheckBox(tr("Network Level Authentication (NLA)"), this);
     m_rdpNla->setChecked(true);
-    m_rdpIgnoreCert  = new QCheckBox(QStringLiteral("Ignore certificate warnings"), this);
-    m_vncViewOnly    = new QCheckBox(QStringLiteral("View only (don't send input)"), this);
+    m_rdpIgnoreCert  = new QCheckBox(tr("Ignore certificate warnings"), this);
+    m_vncViewOnly    = new QCheckBox(tr("View only (don't send input)"), this);
 
     m_advForm->addRow(QString(), m_compression);
     m_advForm->addRow(QString(), m_x11);
     m_advForm->addRow(QString(), m_agent);
     m_advForm->addRow(QString(), m_agentForward);
-    m_advForm->addRow(QStringLiteral("Keepalive interval"), m_sshKeepalive);
-    m_advForm->addRow(QStringLiteral("Remote command"), m_sshRemoteCmd);
+    m_advForm->addRow(tr("Keepalive interval"), m_sshKeepalive);
+    m_advForm->addRow(tr("Remote command"), m_sshRemoteCmd);
     m_advForm->addRow(QString(), m_sshStayOpen);
-    m_advForm->addRow(QStringLiteral("Gateway username"), m_gwUser);
-    m_advForm->addRow(QStringLiteral("Gateway password"), m_gwPassword);
-    m_advForm->addRow(QStringLiteral("Gateway key passphrase"), m_gwPassphrase);
-    m_advForm->addRow(QStringLiteral("Domain"), m_domain);
-    m_advForm->addRow(QStringLiteral("Resolution"), m_rdpResolution);
+    m_advForm->addRow(tr("Gateway username"), m_gwUser);
+    m_advForm->addRow(tr("Gateway password"), m_gwPassword);
+    m_advForm->addRow(tr("Gateway key passphrase"), m_gwPassphrase);
+    m_advForm->addRow(tr("Domain"), m_domain);
+    m_advForm->addRow(tr("Resolution"), m_rdpResolution);
     m_advForm->addRow(QString(), m_rdpClipboard);
     m_advForm->addRow(QString(), m_rdpDrives);
     m_advForm->addRow(QString(), m_rdpAudio);
@@ -196,27 +196,27 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     m_terminal = new QWidget(this);
     auto* termForm = new QFormLayout(m_terminal);
     m_termFont = new QLineEdit(this);
-    m_termFont->setPlaceholderText(QStringLiteral("inherit global font"));
+    m_termFont->setPlaceholderText(tr("inherit global font"));
     m_termFontSize = new QSpinBox(this);
     m_termFontSize->setRange(0, 72);
-    m_termFontSize->setSpecialValueText(QStringLiteral("inherit"));   // 0 shows "inherit"
+    m_termFontSize->setSpecialValueText(tr("inherit"));   // 0 shows "inherit"
     m_termScheme = new QComboBox(this);
-    m_termScheme->addItem(QStringLiteral("(inherit)"), QString());
+    m_termScheme->addItem(tr("(inherit)"), QString());
     for (const auto& n : {QStringLiteral("Dark"), QStringLiteral("Light"),
                           QStringLiteral("Solarized Dark")})
         m_termScheme->addItem(n, n);
     m_termScrollback = new QSpinBox(this);
     m_termScrollback->setRange(-1, 1000000);
     m_termScrollback->setValue(-1);
-    m_termScrollback->setSpecialValueText(QStringLiteral("inherit"));  // -1 shows "inherit"
+    m_termScrollback->setSpecialValueText(tr("inherit"));  // -1 shows "inherit"
     m_termBackspace = new QComboBox(this);
-    m_termBackspace->addItem(QStringLiteral("Control-? (DEL, default)"), QString());
-    m_termBackspace->addItem(QStringLiteral("Control-H"), QStringLiteral("ctrl-h"));
-    termForm->addRow(QStringLiteral("Font"), m_termFont);
-    termForm->addRow(QStringLiteral("Font size"), m_termFontSize);
-    termForm->addRow(QStringLiteral("Color scheme"), m_termScheme);
-    termForm->addRow(QStringLiteral("Scrollback lines"), m_termScrollback);
-    termForm->addRow(QStringLiteral("Backspace sends"), m_termBackspace);
+    m_termBackspace->addItem(tr("Control-? (DEL, default)"), QString());
+    m_termBackspace->addItem(tr("Control-H"), QStringLiteral("ctrl-h"));
+    termForm->addRow(tr("Font"), m_termFont);
+    termForm->addRow(tr("Font size"), m_termFontSize);
+    termForm->addRow(tr("Color scheme"), m_termScheme);
+    termForm->addRow(tr("Scrollback lines"), m_termScrollback);
+    termForm->addRow(tr("Backspace sends"), m_termBackspace);
 
     // Organise the three sections into tabs so the dialog stays short instead of
     // one tall stacked column. Each page is wrapped in a scroll area so it can
@@ -231,9 +231,9 @@ SessionDialog::SessionDialog(QWidget* parent) : QDialog(parent) {
     auto* generalPage = new QWidget(this);
     generalPage->setLayout(form);
     m_tabs = new QTabWidget(this);
-    m_tabs->addTab(wrapScroll(generalPage), QStringLiteral("General"));
-    m_advTabIndex  = m_tabs->addTab(wrapScroll(m_advanced), QStringLiteral("Advanced"));
-    m_termTabIndex = m_tabs->addTab(wrapScroll(m_terminal), QStringLiteral("Terminal"));
+    m_tabs->addTab(wrapScroll(generalPage), tr("General"));
+    m_advTabIndex  = m_tabs->addTab(wrapScroll(m_advanced), tr("Advanced"));
+    m_termTabIndex = m_tabs->addTab(wrapScroll(m_terminal), tr("Terminal"));
 
     // Show only the fields relevant to the selected session type.
     auto updateVisibility = [this, form, keyRow] {
@@ -316,7 +316,7 @@ void SessionDialog::browseKeyFile() {
     // hidden ~/.ssh directory, and the native Open panel hides dotfiles by
     // default — which makes the button look like it "does nothing". The Qt
     // dialog with the Hidden filter shows them reliably on every platform.
-    QFileDialog dlg(this, QStringLiteral("Select private key"), start);
+    QFileDialog dlg(this, tr("Select private key"), start);
     dlg.setFileMode(QFileDialog::ExistingFile);
     dlg.setOption(QFileDialog::DontUseNativeDialog, true);
     dlg.setFilter(QDir::Files | QDir::Hidden | QDir::AllDirs | QDir::NoDotAndDotDot);
@@ -457,7 +457,7 @@ void SessionDialog::onAccept() {
     f.insert("port", m_port->value() > 0 ? QString::number(m_port->value()) : QString());
     const QString err = core::SessionForm::validate(f);
     if (!err.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Invalid session"), err);
+        QMessageBox::warning(this, tr("Invalid session"), err);
         return;
     }
     accept();

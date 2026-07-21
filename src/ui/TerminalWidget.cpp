@@ -530,8 +530,8 @@ void TerminalWidget::paste() {
     const int lines = text.count('\n') + (text.endsWith('\n') ? 0 : 1);
     if (!bracket && text.contains('\n') && lines > 1) {
         const auto btn = QMessageBox::question(
-            this, QStringLiteral("Confirm paste"),
-            QStringLiteral("You are about to paste %1 lines. Continue?").arg(lines),
+            this, tr("Confirm paste"),
+            tr("You are about to paste %1 lines. Continue?").arg(lines),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (btn != QMessageBox::Yes) return;
     }
@@ -597,7 +597,7 @@ void TerminalWidget::showFindBar() {
         lay->setContentsMargins(6, 2, 6, 2);
         lay->setSpacing(4);
         m_findEdit = new QLineEdit(m_findBar);
-        m_findEdit->setPlaceholderText(QStringLiteral("Find in scrollback"));
+        m_findEdit->setPlaceholderText(tr("Find in scrollback"));
         m_findEdit->setMaximumWidth(200);
         m_findCount = new QLabel(m_findBar);
         auto* prev = new QToolButton(m_findBar); prev->setText(QStringLiteral("▲"));
@@ -685,26 +685,26 @@ void TerminalWidget::contextMenuEvent(QContextMenuEvent* e) {
     const QPoint cell = cellForPos(e->pos());
     const QString url = urlAt(cell.y(), cell.x());
     if (!url.isEmpty()) {
-        QAction* open = menu.addAction(glyphIcon(QStringLiteral("🔗")), QStringLiteral("Open Link"));
+        QAction* open = menu.addAction(glyphIcon(QStringLiteral("🔗")), tr("Open Link"));
         connect(open, &QAction::triggered, this, [url] { QDesktopServices::openUrl(QUrl(url)); });
         menu.addSeparator();
     }
-    QAction* copy = menu.addAction(glyphIcon(QStringLiteral("📋")), QStringLiteral("Copy"));
+    QAction* copy = menu.addAction(glyphIcon(QStringLiteral("📋")), tr("Copy"));
     copy->setEnabled(m_hasSelection);
     connect(copy, &QAction::triggered, this, &TerminalWidget::copySelection);
 
-    QAction* paste = menu.addAction(glyphIcon(QStringLiteral("📥")), QStringLiteral("Paste"));
+    QAction* paste = menu.addAction(glyphIcon(QStringLiteral("📥")), tr("Paste"));
     paste->setEnabled(!QApplication::clipboard()->text().isEmpty());
     connect(paste, &QAction::triggered, this, &TerminalWidget::paste);
 
-    QAction* selectAllAct = menu.addAction(glyphIcon(QStringLiteral("🔲")), QStringLiteral("Select All"));
+    QAction* selectAllAct = menu.addAction(glyphIcon(QStringLiteral("🔲")), tr("Select All"));
     connect(selectAllAct, &QAction::triggered, this, &TerminalWidget::selectAll);
 
-    QAction* findAct = menu.addAction(glyphIcon(QStringLiteral("🔍")), QStringLiteral("Find…"));
+    QAction* findAct = menu.addAction(glyphIcon(QStringLiteral("🔍")), tr("Find…"));
     connect(findAct, &QAction::triggered, this, &TerminalWidget::showFindBar);
 
     menu.addSeparator();
-    QAction* clear = menu.addAction(glyphIcon(QStringLiteral("🧹")), QStringLiteral("Clear Scrollback"));
+    QAction* clear = menu.addAction(glyphIcon(QStringLiteral("🧹")), tr("Clear Scrollback"));
     clear->setEnabled(m_vt.scrollbackCount() > 0);
     connect(clear, &QAction::triggered, this, &TerminalWidget::clearScrollback);
 

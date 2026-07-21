@@ -12,7 +12,7 @@
 namespace macxterm::ui {
 
 TunnelDialog::TunnelDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("SSH Tunnel"));
+    setWindowTitle(tr("SSH Tunnel"));
     auto* form = new QFormLayout;
     m_kind = new QComboBox(this);
     m_kind->addItems({"local", "remote", "dynamic"});
@@ -21,11 +21,11 @@ TunnelDialog::TunnelDialog(QWidget* parent) : QDialog(parent) {
     m_targetHost = new QLineEdit(this);
     m_targetPort = new QSpinBox(this); m_targetPort->setRange(0, 65535);
 
-    form->addRow(QStringLiteral("Type"), m_kind);
-    form->addRow(QStringLiteral("Bind address"), m_bindAddr);
-    form->addRow(QStringLiteral("Bind port"), m_bindPort);
-    form->addRow(QStringLiteral("Target host"), m_targetHost);
-    form->addRow(QStringLiteral("Target port"), m_targetPort);
+    form->addRow(tr("Type"), m_kind);
+    form->addRow(tr("Bind address"), m_bindAddr);
+    form->addRow(tr("Bind port"), m_bindPort);
+    form->addRow(tr("Target host"), m_targetHost);
+    form->addRow(tr("Target port"), m_targetPort);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &TunnelDialog::onAccept);

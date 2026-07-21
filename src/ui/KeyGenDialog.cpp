@@ -14,31 +14,31 @@
 namespace macxterm::ui {
 
 KeyGenDialog::KeyGenDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("SSH Key Generator"));
+    setWindowTitle(tr("SSH Key Generator"));
     resize(520, 360);
     auto* layout = new QVBoxLayout(this);
     auto* form = new QFormLayout;
 
     m_type = new QComboBox(this);
     m_type->addItems({QStringLiteral("ed25519"), QStringLiteral("ecdsa"), QStringLiteral("rsa (4096)")});
-    form->addRow(QStringLiteral("Type"), m_type);
+    form->addRow(tr("Type"), m_type);
 
     m_path = new QLineEdit(QDir::homePath() + QStringLiteral("/.ssh/id_macxterm"), this);
-    auto* browse = new QPushButton(QStringLiteral("Browse…"), this);
+    auto* browse = new QPushButton(tr("Browse…"), this);
     connect(browse, &QPushButton::clicked, this, &KeyGenDialog::browse);
     auto* pathRow = new QWidget(this);
     auto* pathLayout = new QHBoxLayout(pathRow);
     pathLayout->setContentsMargins(0, 0, 0, 0);
     pathLayout->addWidget(m_path);
     pathLayout->addWidget(browse);
-    form->addRow(QStringLiteral("Output file"), pathRow);
+    form->addRow(tr("Output file"), pathRow);
 
     m_passphrase = new QLineEdit(this);
     m_passphrase->setEchoMode(QLineEdit::Password);
-    form->addRow(QStringLiteral("Passphrase"), m_passphrase);
+    form->addRow(tr("Passphrase"), m_passphrase);
     layout->addLayout(form);
 
-    auto* gen = new QPushButton(QStringLiteral("Generate"), this);
+    auto* gen = new QPushButton(tr("Generate"), this);
     connect(gen, &QPushButton::clicked, this, &KeyGenDialog::generate);
     layout->addWidget(gen);
 
@@ -48,7 +48,7 @@ KeyGenDialog::KeyGenDialog(QWidget* parent) : QDialog(parent) {
 }
 
 void KeyGenDialog::browse() {
-    const QString p = QFileDialog::getSaveFileName(this, QStringLiteral("Key file"), m_path->text());
+    const QString p = QFileDialog::getSaveFileName(this, tr("Key file"), m_path->text());
     if (!p.isEmpty()) m_path->setText(p);
 }
 
@@ -64,13 +64,13 @@ void KeyGenDialog::generate() {
     QProcess proc;
     proc.start(QStringLiteral("ssh-keygen"), args);
     if (!proc.waitForFinished(15000)) {
-        m_output->setPlainText(QStringLiteral("ssh-keygen timed out or is not installed."));
+        m_output->setPlainText(tr("ssh-keygen timed out or is not installed."));
         return;
     }
     QString out = QString::fromUtf8(proc.readAllStandardOutput() + proc.readAllStandardError());
     QFile pub(path + QStringLiteral(".pub"));
     if (pub.open(QIODevice::ReadOnly)) {
-        out += QStringLiteral("\n\nPublic key (%1.pub):\n%2")
+        out += tr("\n\nPublic key (%1.pub):\n%2")
                    .arg(path, QString::fromUtf8(pub.readAll()));
     }
     m_output->setPlainText(out);

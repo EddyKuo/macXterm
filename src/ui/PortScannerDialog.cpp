@@ -13,7 +13,7 @@
 namespace macxterm::ui {
 
 PortScannerDialog::PortScannerDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("Port Scanner"));
+    setWindowTitle(tr("Port Scanner"));
     resize(360, 400);
     auto* layout = new QVBoxLayout(this);
 
@@ -21,13 +21,13 @@ PortScannerDialog::PortScannerDialog(QWidget* parent) : QDialog(parent) {
     m_host = new QLineEdit(QStringLiteral("127.0.0.1"), this);
     m_from = new QSpinBox(this); m_from->setRange(1, 65535); m_from->setValue(1);
     m_to = new QSpinBox(this);   m_to->setRange(1, 65535);   m_to->setValue(1024);
-    form->addRow(QStringLiteral("Host"), m_host);
+    form->addRow(tr("Host"), m_host);
     auto* range = new QHBoxLayout;
     range->addWidget(m_from); range->addWidget(new QLabel(QStringLiteral("–"), this)); range->addWidget(m_to);
-    form->addRow(QStringLiteral("Ports"), range);
+    form->addRow(tr("Ports"), range);
     layout->addLayout(form);
 
-    m_scanBtn = new QPushButton(QStringLiteral("Scan ports"), this);
+    m_scanBtn = new QPushButton(tr("Scan ports"), this);
     connect(m_scanBtn, &QPushButton::clicked, this, &PortScannerDialog::scan);
     layout->addWidget(m_scanBtn);
 
@@ -35,10 +35,10 @@ PortScannerDialog::PortScannerDialog(QWidget* parent) : QDialog(parent) {
     auto* subForm = new QFormLayout;
     m_cidr = new QLineEdit(QStringLiteral("192.168.1.0/24"), this);
     m_probePort = new QSpinBox(this); m_probePort->setRange(1, 65535); m_probePort->setValue(22);
-    subForm->addRow(QStringLiteral("Subnet (CIDR)"), m_cidr);
-    subForm->addRow(QStringLiteral("Probe port"), m_probePort);
+    subForm->addRow(tr("Subnet (CIDR)"), m_cidr);
+    subForm->addRow(tr("Probe port"), m_probePort);
     layout->addLayout(subForm);
-    m_subnetBtn = new QPushButton(QStringLiteral("Scan subnet hosts"), this);
+    m_subnetBtn = new QPushButton(tr("Scan subnet hosts"), this);
     connect(m_subnetBtn, &QPushButton::clicked, this, &PortScannerDialog::scanSubnet);
     layout->addWidget(m_subnetBtn);
 
@@ -46,11 +46,11 @@ PortScannerDialog::PortScannerDialog(QWidget* parent) : QDialog(parent) {
     layout->addWidget(m_results, 1);
 
     connect(&m_scanner, &tools::PortScanner::portOpen, this, [this](quint16 p) {
-        m_results->addItem(QStringLiteral("%1  OPEN").arg(p));
+        m_results->addItem(tr("%1  OPEN").arg(p));
     });
     connect(&m_scanner, &tools::PortScanner::finished, this, [this](int n) {
         m_scanBtn->setEnabled(true);
-        m_results->addItem(QStringLiteral("— done, %1 open port(s) —").arg(n));
+        m_results->addItem(tr("— done, %1 open port(s) —").arg(n));
     });
 }
 
@@ -65,7 +65,7 @@ void PortScannerDialog::scanSubnet() {
     m_results->clear();
     const QStringList hosts = tools::Subnet::hosts(m_cidr->text());
     if (hosts.isEmpty()) {
-        m_results->addItem(QStringLiteral("Invalid CIDR or range too large (min /16)"));
+        m_results->addItem(tr("Invalid CIDR or range too large (min /16)"));
         return;
     }
     m_subnetBtn->setEnabled(false);
@@ -73,12 +73,12 @@ void PortScannerDialog::scanSubnet() {
     int live = 0;
     for (const QString& h : hosts) {
         if (tools::PortScanner::scanPort(h, port, 150)) {
-            m_results->addItem(QStringLiteral("%1:%2  UP").arg(h).arg(port));
+            m_results->addItem(tr("%1:%2  UP").arg(h).arg(port));
             ++live;
         }
         QApplication::processEvents();   // keep UI responsive during the sweep
     }
-    m_results->addItem(QStringLiteral("— %1 host(s) up on port %2 —").arg(live).arg(port));
+    m_results->addItem(tr("— %1 host(s) up on port %2 —").arg(live).arg(port));
     m_subnetBtn->setEnabled(true);
 }
 

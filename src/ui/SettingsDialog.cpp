@@ -18,7 +18,7 @@
 namespace macxterm::ui {
 
 SettingsDialog::SettingsDialog(const core::Settings& s, QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("Settings"));
+    setWindowTitle(tr("Settings"));
     auto* tabs = new QTabWidget(this);
 
     // Terminal tab.
@@ -33,8 +33,8 @@ SettingsDialog::SettingsDialog(const core::Settings& s, QWidget* parent) : QDial
     m_scheme = new QComboBox(term); m_scheme->addItems({"Dark", "Light", "Solarized Dark"});
     m_scheme->setCurrentText(s.colorScheme());
     m_scrollback = new QSpinBox(term); m_scrollback->setRange(0, 1000000); m_scrollback->setValue(s.scrollbackLines());
-    tf->addRow(QStringLiteral("Font"), m_font);
-    tf->addRow(QStringLiteral("Font size"), m_fontSize);
+    tf->addRow(tr("Font"), m_font);
+    tf->addRow(tr("Font size"), m_fontSize);
 
     // Live preview + Unicode-coverage readout, so the family/size can be judged
     // before applying. See updateFontPreview().
@@ -45,26 +45,26 @@ SettingsDialog::SettingsDialog(const core::Settings& s, QWidget* parent) : QDial
     m_preview->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_coverage = new QLabel(term);
     m_coverage->setWordWrap(true);
-    tf->addRow(QStringLiteral("Preview"), m_preview);
-    tf->addRow(QStringLiteral("Unicode"), m_coverage);
+    tf->addRow(tr("Preview"), m_preview);
+    tf->addRow(tr("Unicode"), m_coverage);
     connect(m_font, &QFontComboBox::currentFontChanged, this, [this] { updateFontPreview(); });
     connect(m_fontSize, QOverload<int>::of(&QSpinBox::valueChanged), this, [this] { updateFontPreview(); });
     updateFontPreview();
 
-    tf->addRow(QStringLiteral("Color scheme"), m_scheme);
-    tf->addRow(QStringLiteral("Scrollback"), m_scrollback);
-    tabs->addTab(term, QStringLiteral("Terminal"));
+    tf->addRow(tr("Color scheme"), m_scheme);
+    tf->addRow(tr("Scrollback"), m_scrollback);
+    tabs->addTab(term, tr("Terminal"));
 
     // X11 tab.
     auto* x11 = new QWidget;
     auto* xf = new QFormLayout(x11);
-    m_x11Auto = new QCheckBox(QStringLiteral("Auto-start X server"), x11);
+    m_x11Auto = new QCheckBox(tr("Auto-start X server"), x11);
     m_x11Auto->setChecked(s.x11AutoStart());
-    m_x11Fwd = new QCheckBox(QStringLiteral("Enable SSH X11 forwarding"), x11);
+    m_x11Fwd = new QCheckBox(tr("Enable SSH X11 forwarding"), x11);
     m_x11Fwd->setChecked(s.value("ssh.x11Forwarding", true).toBool());
     xf->addRow(m_x11Auto);
     xf->addRow(m_x11Fwd);
-    tabs->addTab(x11, QStringLiteral("X11"));
+    tabs->addTab(x11, tr("X11"));
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -114,10 +114,10 @@ void SettingsDialog::updateFontPreview() {
         if (rf.isValid() && rf.supportsCharacter(p.cp)) have << QString::fromLatin1(p.label);
         else missing << QString::fromLatin1(p.label);
     }
-    QString msg = QStringLiteral("This font covers: ") +
-                  (have.isEmpty() ? QStringLiteral("(none)") : have.join(QStringLiteral(", ")));
+    QString msg = tr("This font covers: ") +
+                  (have.isEmpty() ? tr("(none)") : have.join(QStringLiteral(", ")));
     if (!missing.isEmpty())
-        msg += QStringLiteral(".  Not in this font (falls back in the terminal): ") +
+        msg += tr(".  Not in this font (falls back in the terminal): ") +
                missing.join(QStringLiteral(", "));
     m_coverage->setText(msg);
 }

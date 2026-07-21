@@ -129,6 +129,7 @@ endif()
 if(MACXTERM_BUILD_GUI)
   add_executable(macxterm
     ui/main.cpp
+    i18n/LanguageManager.cpp
     ui/MainWindow.cpp
     ui/TerminalWidget.cpp
     ui/SessionDialog.cpp
@@ -170,6 +171,18 @@ if(MACXTERM_BUILD_GUI)
     target_compile_definitions(macxterm PRIVATE MACXTERM_HAVE_WEBENGINE)
     target_link_libraries(macxterm PRIVATE Qt6::WebEngineWidgets)
   endif()
+  # ── UI translations (繁中 / 简中 / 日本語) ─────────────────────────────────
+  # lupdate scans the GUI sources for tr() strings into i18n/*.ts; lrelease
+  # compiles them to .qm which qt_add_translations embeds as a Qt resource at
+  # :/i18n/macxterm_<code>.qm (loaded at runtime by i18n/LanguageManager).
+  qt_add_translations(macxterm
+    TS_FILES
+      ${CMAKE_SOURCE_DIR}/i18n/macxterm_zh_TW.ts
+      ${CMAKE_SOURCE_DIR}/i18n/macxterm_zh_CN.ts
+      ${CMAKE_SOURCE_DIR}/i18n/macxterm_ja.ts
+    RESOURCE_PREFIX "/i18n"
+    LUPDATE_OPTIONS -no-obsolete -locations none)
+
   set_target_properties(macxterm PROPERTIES
     OUTPUT_NAME "macXterm"
     # Windows: GUI-subsystem app so no console window opens (Qt6::EntryPoint

@@ -8,25 +8,25 @@
 namespace macxterm::ui {
 
 QString VaultDialog::validate(Mode mode, const QString& pw, const QString& confirm) {
-    if (pw.isEmpty()) return QStringLiteral("Password is required");
+    if (pw.isEmpty()) return tr("Password is required");
     if (mode == Mode::Create) {
-        if (pw.size() < 8) return QStringLiteral("Master password must be at least 8 characters");
-        if (pw != confirm) return QStringLiteral("Passwords do not match");
+        if (pw.size() < 8) return tr("Master password must be at least 8 characters");
+        if (pw != confirm) return tr("Passwords do not match");
     }
     return {};
 }
 
 VaultDialog::VaultDialog(Mode mode, QWidget* parent) : QDialog(parent), m_mode(mode) {
-    setWindowTitle(mode == Mode::Create ? QStringLiteral("Set Master Password")
-                                        : QStringLiteral("Unlock Vault"));
+    setWindowTitle(mode == Mode::Create ? tr("Set Master Password")
+                                        : tr("Unlock Vault"));
     auto* form = new QFormLayout;
     m_pw = new QLineEdit(this);
     m_pw->setEchoMode(QLineEdit::Password);
-    form->addRow(QStringLiteral("Master password"), m_pw);
+    form->addRow(tr("Master password"), m_pw);
     if (mode == Mode::Create) {
         m_confirm = new QLineEdit(this);
         m_confirm->setEchoMode(QLineEdit::Password);
-        form->addRow(QStringLiteral("Confirm"), m_confirm);
+        form->addRow(tr("Confirm"), m_confirm);
     }
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &VaultDialog::onAccept);

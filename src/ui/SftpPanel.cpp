@@ -63,16 +63,16 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
         bar->addWidget(b);
         return b;
     };
-    mkBtn(QStringLiteral("⌂"), &SftpPanel::goHome)->setToolTip(QStringLiteral("Home folder"));
+    mkBtn(QStringLiteral("⌂"), &SftpPanel::goHome)->setToolTip(tr("Home folder"));
     mkBtn(QStringLiteral("↑"), &SftpPanel::goUp);
     mkBtn(QStringLiteral("⟳"), &SftpPanel::refresh);
-    mkBtn(QStringLiteral("↓ Download"), &SftpPanel::download);
-    mkBtn(QStringLiteral("↑ Upload"), &SftpPanel::upload);
+    mkBtn(tr("↓ Download"), &SftpPanel::download);
+    mkBtn(tr("↑ Upload"), &SftpPanel::upload);
     m_follow = new QToolButton(this);
-    m_follow->setText(QStringLiteral("⇄ Follow"));
+    m_follow->setText(tr("⇄ Follow"));
     m_follow->setCheckable(true);
     m_follow->setChecked(true);   // follow the terminal's folder by default (MobaXterm-like)
-    m_follow->setToolTip(QStringLiteral("Follow the terminal's current folder"));
+    m_follow->setToolTip(tr("Follow the terminal's current folder"));
     bar->addWidget(m_follow);
     bar->addStretch();
     layout->addLayout(bar);
@@ -83,8 +83,8 @@ SftpPanel::SftpPanel(QWidget* parent) : QWidget(parent) {
 
     m_list = new QTreeWidget(this);
     m_list->setColumnCount(4);
-    m_list->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Size"),
-                             QStringLiteral("Modified"), QStringLiteral("Perms")});
+    m_list->setHeaderLabels({tr("Name"), tr("Size"),
+                             tr("Modified"), tr("Perms")});
     m_list->setRootIsDecorated(false);
     m_list->header()->setStretchLastSection(false);
     m_list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -128,10 +128,10 @@ void SftpPanel::initBackend(Backend backend) {
 void SftpPanel::setStatus(const QString& msg) { if (m_status) m_status->setText(msg); }
 
 bool SftpPanel::openFor(const core::Session& session) {
-    setStatus(QStringLiteral("Connecting…"));
+    setStatus(tr("Connecting…"));
     QApplication::processEvents();
     if (!m_fs->connectSession(session)) {
-        setStatus(QStringLiteral("Connect failed"));
+        setStatus(tr("Connect failed"));
         return false;
     }
     // Resolve "." to an absolute path so follow-terminal-folder can compare.
@@ -149,7 +149,7 @@ void SftpPanel::closeSession() {
     if (m_list) m_list->clear();
     if (m_pathBar) m_pathBar->clear();
     m_cwd = QStringLiteral(".");
-    setStatus(QStringLiteral("Disconnected"));
+    setStatus(tr("Disconnected"));
 }
 
 void SftpPanel::navigateTo(const QString& path) {
@@ -178,7 +178,7 @@ void SftpPanel::navigateTo(const QString& path) {
         item->setData(2, Qt::UserRole, static_cast<qlonglong>(e.mtime));  // chronological sort key
     }
     m_list->setSortingEnabled(wasSorting);
-    setStatus(QStringLiteral("%1 items").arg(entries.size()));
+    setStatus(tr("%1 items").arg(entries.size()));
 }
 
 void SftpPanel::refresh() { navigateTo(m_cwd); }
@@ -220,7 +220,7 @@ void SftpPanel::editRemote(const QString& remotePath) {
     const QString local = QDir(tmpDir).filePath(
         QStringLiteral("macxterm-%1-%2")
             .arg(QUuid::createUuid().toString(QUuid::Id128), QFileInfo(remotePath).fileName()));
-    if (downloadTo(remotePath, local) < 0) { setStatus(QStringLiteral("Open for edit failed")); return; }
+    if (downloadTo(remotePath, local) < 0) { setStatus(tr("Open for edit failed")); return; }
 
     m_editing.insert(local, remotePath);
     auto* ed = new TextEditorDialog(this);
@@ -231,15 +231,15 @@ void SftpPanel::editRemote(const QString& remotePath) {
         const QString remote = m_editing.value(savedLocal);
         if (remote.isEmpty()) return;
         const qint64 n = m_fs->upload(savedLocal, remote);
-        setStatus(n >= 0 ? QStringLiteral("Saved back %1 bytes → %2").arg(n).arg(remote)
-                         : QStringLiteral("Save-back failed"));
+        setStatus(n >= 0 ? tr("Saved back %1 bytes → %2").arg(n).arg(remote)
+                         : tr("Save-back failed"));
     });
     connect(ed, &QDialog::finished, this, [this, local] {
         m_editing.remove(local);
         QFile::remove(local);
     });
     ed->show();
-    setStatus(QStringLiteral("Editing %1 (saves upload back)").arg(remotePath));
+    setStatus(tr("Editing %1 (saves upload back)").arg(remotePath));
 }
 
 // Thin UI wrappers over the unit-tested core recursion (sftp::downloadTree /
@@ -249,7 +249,7 @@ qint64 SftpPanel::downloadTree(const QString& remote, const QString& local, bool
     return sftp::downloadTree(*m_fs, remote, local, isDir,
         [&prog] { return prog.wasCanceled(); },
         [&prog](const QString& p) {
-            prog.setLabelText(QStringLiteral("Downloading %1").arg(p));
+            prog.setLabelText(tr("Downloading %1").arg(p));
             QApplication::processEvents();
         });
 }
@@ -258,7 +258,7 @@ qint64 SftpPanel::uploadTree(const QString& local, const QString& remote, QProgr
     return sftp::uploadTree(*m_fs, local, remote,
         [&prog] { return prog.wasCanceled(); },
         [&prog](const QString& p) {
-            prog.setLabelText(QStringLiteral("Uploading %1").arg(QFileInfo(p).fileName()));
+            prog.setLabelText(tr("Uploading %1").arg(QFileInfo(p).fileName()));
             QApplication::processEvents();
         });
 }
@@ -271,45 +271,45 @@ void SftpPanel::download() {
     QString local;
     if (isDir) {
         const QString into = QFileDialog::getExistingDirectory(
-            this, QStringLiteral("Download folder into…"));
+            this, tr("Download folder into…"));
         if (into.isEmpty()) return;
         local = QDir(into).filePath(name);
     } else {
-        local = QFileDialog::getSaveFileName(this, QStringLiteral("Download to"), name);
+        local = QFileDialog::getSaveFileName(this, tr("Download to"), name);
     }
     if (local.isEmpty()) return;
-    QProgressDialog prog(QStringLiteral("Downloading…"), QStringLiteral("Cancel"), 0, 0, this);
+    QProgressDialog prog(tr("Downloading…"), tr("Cancel"), 0, 0, this);
     prog.setWindowModality(Qt::WindowModal);
     const qint64 n = downloadTree(remote, local, isDir, prog);
     prog.close();
-    setStatus(n >= 0 ? QStringLiteral("Downloaded %1 bytes").arg(n)
-             : prog.wasCanceled() ? QStringLiteral("Download canceled")
-                                   : QStringLiteral("Download failed"));
+    setStatus(n >= 0 ? tr("Downloaded %1 bytes").arg(n)
+             : prog.wasCanceled() ? tr("Download canceled")
+                                   : tr("Download failed"));
 }
 
 void SftpPanel::upload() {
     if (!m_fs->isReady()) return;
-    const QString local = QFileDialog::getOpenFileName(this, QStringLiteral("Upload file"));
+    const QString local = QFileDialog::getOpenFileName(this, tr("Upload file"));
     if (local.isEmpty()) return;
     const QString remote = sftp::RemotePath::join(m_cwd, QFileInfo(local).fileName());
     const qint64 n = m_fs->upload(local, remote);
-    setStatus(n >= 0 ? QStringLiteral("Uploaded %1 bytes").arg(n)
-                     : QStringLiteral("Upload failed"));
+    setStatus(n >= 0 ? tr("Uploaded %1 bytes").arg(n)
+                     : tr("Upload failed"));
     if (n >= 0) refresh();
 }
 
 void SftpPanel::uploadFolder() {
     if (!m_fs->isReady()) return;
-    const QString local = QFileDialog::getExistingDirectory(this, QStringLiteral("Upload folder"));
+    const QString local = QFileDialog::getExistingDirectory(this, tr("Upload folder"));
     if (local.isEmpty()) return;
     const QString remote = sftp::RemotePath::join(m_cwd, QFileInfo(local).fileName());
-    QProgressDialog prog(QStringLiteral("Uploading…"), QStringLiteral("Cancel"), 0, 0, this);
+    QProgressDialog prog(tr("Uploading…"), tr("Cancel"), 0, 0, this);
     prog.setWindowModality(Qt::WindowModal);
     const qint64 n = uploadTree(local, remote, prog);
     prog.close();
-    setStatus(n >= 0 ? QStringLiteral("Uploaded %1 bytes").arg(n)
-             : prog.wasCanceled() ? QStringLiteral("Upload canceled")
-                                   : QStringLiteral("Upload failed"));
+    setStatus(n >= 0 ? tr("Uploaded %1 bytes").arg(n)
+             : prog.wasCanceled() ? tr("Upload canceled")
+                                   : tr("Upload failed"));
     if (n >= 0) refresh();
 }
 
@@ -321,53 +321,53 @@ void SftpPanel::showContextMenu(const QPoint& pos) {
     if (!name.isEmpty() && name != QStringLiteral(".")) {
         const QString target = sftp::RemotePath::join(m_cwd, name);
         if (!isDir) {
-            menu.addAction(QStringLiteral("Edit…"), this, [this, target] { editRemote(target); });
-            menu.addAction(QStringLiteral("Download…"), this, &SftpPanel::download);
-            menu.addAction(QStringLiteral("Download via SCP…"), this, [this, target, name] {
+            menu.addAction(tr("Edit…"), this, [this, target] { editRemote(target); });
+            menu.addAction(tr("Download…"), this, &SftpPanel::download);
+            menu.addAction(tr("Download via SCP…"), this, [this, target, name] {
                 const QString local = QFileDialog::getSaveFileName(
-                    this, QStringLiteral("Download (SCP) to"), name);
+                    this, tr("Download (SCP) to"), name);
                 if (local.isEmpty()) return;
                 const qint64 n = m_fs->scpDownload(target, local);
-                setStatus(n >= 0 ? QStringLiteral("SCP downloaded %1 bytes").arg(n)
-                                 : QStringLiteral("SCP download failed"));
+                setStatus(n >= 0 ? tr("SCP downloaded %1 bytes").arg(n)
+                                 : tr("SCP download failed"));
             });
         }
-        menu.addAction(QStringLiteral("Permissions (chmod)…"), this, [this, target] {
+        menu.addAction(tr("Permissions (chmod)…"), this, [this, target] {
             QTreeWidgetItem* it = m_list->currentItem();
             const uint cur = it ? it->data(0, Qt::UserRole + 2).toUInt() : 0644;
             bool ok = false;
             const QString mode = QInputDialog::getText(
-                this, QStringLiteral("chmod"), QStringLiteral("Octal permissions:"),
+                this, tr("chmod"), tr("Octal permissions:"),
                 QLineEdit::Normal, QStringLiteral("%1").arg(cur, 3, 8, QChar('0')), &ok);
             if (!ok) return;
             bool valid = false;
             const uint m = mode.toUInt(&valid, 8);
             if (valid && m_fs->chmod(target, m)) refresh();
         });
-        menu.addAction(QStringLiteral("Rename…"), this, [this, target, name] {
+        menu.addAction(tr("Rename…"), this, [this, target, name] {
             bool ok = false;
-            const QString nn = QInputDialog::getText(this, QStringLiteral("Rename"),
-                QStringLiteral("New name:"), QLineEdit::Normal, name, &ok);
+            const QString nn = QInputDialog::getText(this, tr("Rename"),
+                tr("New name:"), QLineEdit::Normal, name, &ok);
             if (ok && !nn.isEmpty() && m_fs->rename(target, sftp::RemotePath::join(m_cwd, nn)))
                 refresh();
         });
-        menu.addAction(QStringLiteral("Delete"), this, [this, target, isDir, name] {
-            if (QMessageBox::question(this, QStringLiteral("Delete"),
-                    QStringLiteral("Delete %1?").arg(name)) != QMessageBox::Yes) return;
+        menu.addAction(tr("Delete"), this, [this, target, isDir, name] {
+            if (QMessageBox::question(this, tr("Delete"),
+                    tr("Delete %1?").arg(name)) != QMessageBox::Yes) return;
             const bool ok = isDir ? m_fs->removeDir(target) : m_fs->removeFile(target);
             if (ok) refresh();
         });
         menu.addSeparator();
     }
-    menu.addAction(QStringLiteral("New folder…"), this, [this] {
+    menu.addAction(tr("New folder…"), this, [this] {
         bool ok = false;
-        const QString nn = QInputDialog::getText(this, QStringLiteral("New folder"),
-            QStringLiteral("Folder name:"), QLineEdit::Normal, QString(), &ok);
+        const QString nn = QInputDialog::getText(this, tr("New folder"),
+            tr("Folder name:"), QLineEdit::Normal, QString(), &ok);
         if (ok && !nn.isEmpty() && m_fs->makeDir(sftp::RemotePath::join(m_cwd, nn))) refresh();
     });
-    menu.addAction(QStringLiteral("Upload file…"), this, &SftpPanel::upload);
-    menu.addAction(QStringLiteral("Upload folder…"), this, &SftpPanel::uploadFolder);
-    menu.addAction(QStringLiteral("Refresh"), this, &SftpPanel::refresh);
+    menu.addAction(tr("Upload file…"), this, &SftpPanel::upload);
+    menu.addAction(tr("Upload folder…"), this, &SftpPanel::uploadFolder);
+    menu.addAction(tr("Refresh"), this, &SftpPanel::refresh);
     menu.exec(m_list->viewport()->mapToGlobal(pos));
 }
 
@@ -379,7 +379,7 @@ void SftpPanel::dragEnterEvent(QDragEnterEvent* e) {
 
 void SftpPanel::dropEvent(QDropEvent* e) {
     if (!m_fs->isReady() || !e->mimeData()->hasUrls()) return;
-    QProgressDialog prog(QStringLiteral("Uploading…"), QStringLiteral("Cancel"), 0, 0, this);
+    QProgressDialog prog(tr("Uploading…"), tr("Cancel"), 0, 0, this);
     prog.setWindowModality(Qt::WindowModal);
     int ok = 0;
     for (const QUrl& url : e->mimeData()->urls()) {
@@ -389,7 +389,7 @@ void SftpPanel::dropEvent(QDropEvent* e) {
         if (uploadTree(local, remote, prog) >= 0) ++ok;   // handles files and folders
     }
     prog.close();
-    setStatus(QStringLiteral("Uploaded %1 item(s)").arg(ok));
+    setStatus(tr("Uploaded %1 item(s)").arg(ok));
     if (ok) { refresh(); e->acceptProposedAction(); }
 }
 

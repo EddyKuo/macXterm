@@ -12,7 +12,7 @@
 namespace macxterm::ui {
 
 ServersDialog::ServersDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("Light Servers"));
+    setWindowTitle(tr("Light Servers"));
     auto* layout = new QVBoxLayout(this);
 
     layout->addWidget(buildRow(QStringLiteral("HTTP"), true,
@@ -45,7 +45,7 @@ ServersDialog::ServersDialog(QWidget* parent) : QDialog(parent) {
 }
 
 QWidget* ServersDialog::buildSshRow() {
-    auto* box = new QGroupBox(QStringLiteral("SSH / SFTP server"), this);
+    auto* box = new QGroupBox(tr("SSH / SFTP server"), this);
     auto* row = new QHBoxLayout(box);
     auto* user = new QLineEdit(QStringLiteral("user"), box);
     auto* pass = new QLineEdit(box);
@@ -55,54 +55,54 @@ QWidget* ServersDialog::buildSshRow() {
     auto* portSpin = new QSpinBox(box);
     portSpin->setRange(0, 65535);
     portSpin->setValue(2222);
-    auto* status = new QLabel(QStringLiteral("stopped"), box);
-    auto* btn = new QPushButton(QStringLiteral("Start"), box);
+    auto* status = new QLabel(tr("stopped"), box);
+    auto* btn = new QPushButton(tr("Start"), box);
     connect(btn, &QPushButton::clicked, box, [=] {
         if (m_ssh.isRunning()) {
             m_ssh.stop();
-            btn->setText(QStringLiteral("Start")); status->setText(QStringLiteral("stopped"));
+            btn->setText(tr("Start")); status->setText(tr("stopped"));
         } else if (m_ssh.start(static_cast<quint16>(portSpin->value()), user->text(),
                                pass->text(), dir->text())) {
-            btn->setText(QStringLiteral("Stop"));
-            status->setText(QStringLiteral("running on 127.0.0.1:%1").arg(m_ssh.port()));
+            btn->setText(tr("Stop"));
+            status->setText(tr("running on 127.0.0.1:%1").arg(m_ssh.port()));
         } else {
-            status->setText(QStringLiteral("failed (no libssh?)"));
+            status->setText(tr("failed (no libssh?)"));
         }
     });
-    row->addWidget(new QLabel(QStringLiteral("User:"), box)); row->addWidget(user);
-    row->addWidget(new QLabel(QStringLiteral("Pass:"), box)); row->addWidget(pass);
-    row->addWidget(new QLabel(QStringLiteral("Dir:"), box)); row->addWidget(dir, 1);
-    row->addWidget(new QLabel(QStringLiteral("Port:"), box)); row->addWidget(portSpin);
+    row->addWidget(new QLabel(tr("User:"), box)); row->addWidget(user);
+    row->addWidget(new QLabel(tr("Pass:"), box)); row->addWidget(pass);
+    row->addWidget(new QLabel(tr("Dir:"), box)); row->addWidget(dir, 1);
+    row->addWidget(new QLabel(tr("Port:"), box)); row->addWidget(portSpin);
     row->addWidget(btn); row->addWidget(status);
     return box;
 }
 
 QWidget* ServersDialog::buildCronRow() {
-    auto* box = new QGroupBox(QStringLiteral("CRON scheduler"), this);
+    auto* box = new QGroupBox(tr("CRON scheduler"), this);
     auto* row = new QHBoxLayout(box);
     auto* expr = new QLineEdit(QStringLiteral("*/5 * * * *"), box);
-    expr->setToolTip(QStringLiteral("min hour dom month dow"));
+    expr->setToolTip(tr("min hour dom month dow"));
     auto* cmd = new QLineEdit(box);
-    cmd->setPlaceholderText(QStringLiteral("command to run"));
-    auto* status = new QLabel(QStringLiteral("stopped"), box);
-    auto* add = new QPushButton(QStringLiteral("Add job"), box);
-    auto* toggle = new QPushButton(QStringLiteral("Start"), box);
+    cmd->setPlaceholderText(tr("command to run"));
+    auto* status = new QLabel(tr("stopped"), box);
+    auto* add = new QPushButton(tr("Add job"), box);
+    auto* toggle = new QPushButton(tr("Start"), box);
     connect(add, &QPushButton::clicked, box, [this, expr, cmd, status] {
         if (cmd->text().isEmpty()) return;
         if (m_cron.addJob(expr->text(), cmd->text())) {
-            status->setText(QStringLiteral("%1 job(s)").arg(m_cron.jobCount()));
+            status->setText(tr("%1 job(s)").arg(m_cron.jobCount()));
             cmd->clear();
         } else {
-            status->setText(QStringLiteral("invalid cron expr"));
+            status->setText(tr("invalid cron expr"));
         }
     });
     connect(toggle, &QPushButton::clicked, box, [this, toggle, status] {
-        if (m_cron.isRunning()) { m_cron.stop(); toggle->setText(QStringLiteral("Start"));
-            status->setText(QStringLiteral("stopped")); }
-        else { m_cron.start(); toggle->setText(QStringLiteral("Stop"));
-            status->setText(QStringLiteral("running (%1 jobs)").arg(m_cron.jobCount())); }
+        if (m_cron.isRunning()) { m_cron.stop(); toggle->setText(tr("Start"));
+            status->setText(tr("stopped")); }
+        else { m_cron.start(); toggle->setText(tr("Stop"));
+            status->setText(tr("running (%1 jobs)").arg(m_cron.jobCount())); }
     });
-    row->addWidget(new QLabel(QStringLiteral("Sched:"), box));
+    row->addWidget(new QLabel(tr("Sched:"), box));
     row->addWidget(expr);
     row->addWidget(cmd, 1);
     row->addWidget(add);
@@ -124,32 +124,32 @@ QWidget* ServersDialog::buildRow(const QString& name, bool needsDir,
         dir = new QLineEdit(QDir::homePath(), box);
         auto* browse = new QPushButton(QStringLiteral("…"), box);
         connect(browse, &QPushButton::clicked, box, [this, dir] {
-            const QString d = QFileDialog::getExistingDirectory(this, QStringLiteral("Serve directory"));
+            const QString d = QFileDialog::getExistingDirectory(this, tr("Serve directory"));
             if (!d.isEmpty()) dir->setText(d);
         });
-        row->addWidget(new QLabel(QStringLiteral("Dir:"), box));
+        row->addWidget(new QLabel(tr("Dir:"), box));
         row->addWidget(dir);
         row->addWidget(browse);
     }
     auto* portSpin = new QSpinBox(box);
     portSpin->setRange(0, 65535);
-    row->addWidget(new QLabel(QStringLiteral("Port:"), box));
+    row->addWidget(new QLabel(tr("Port:"), box));
     row->addWidget(portSpin);
 
-    auto* status = new QLabel(QStringLiteral("stopped"), box);
-    auto* btn = new QPushButton(QStringLiteral("Start"), box);
+    auto* status = new QLabel(tr("stopped"), box);
+    auto* btn = new QPushButton(tr("Start"), box);
     connect(btn, &QPushButton::clicked, box, [=] {
         if (running()) {
             stop();
-            btn->setText(QStringLiteral("Start"));
-            status->setText(QStringLiteral("stopped"));
+            btn->setText(tr("Start"));
+            status->setText(tr("stopped"));
         } else {
             const QString d = dir ? dir->text() : QString();
             if (start(d, static_cast<quint16>(portSpin->value()))) {
-                btn->setText(QStringLiteral("Stop"));
-                status->setText(QStringLiteral("running on port %1").arg(port()));
+                btn->setText(tr("Stop"));
+                status->setText(tr("running on port %1").arg(port()));
             } else {
-                status->setText(QStringLiteral("failed to start"));
+                status->setText(tr("failed to start"));
             }
         }
     });

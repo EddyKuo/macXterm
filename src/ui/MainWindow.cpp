@@ -1,4 +1,5 @@
 #include "ui/MainWindow.h"
+#include "i18n/LanguageManager.h"
 #include "ui/TerminalWidget.h"
 #include "connect/LocalShellConnection.h"
 #include "connect/SshConnection.h"
@@ -45,6 +46,8 @@
 #include <QTimer>
 #include <QImage>
 #include <QMenuBar>
+#include <QActionGroup>
+#include <QEvent>
 #include <QStatusBar>
 #include <QFileInfo>
 #include <QFileDialog>
@@ -104,17 +107,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setCentralWidget(m_tabs);
 
     m_tree = new QTreeWidget(this);
-    m_tree->setHeaderLabel(QStringLiteral("Sessions"));
+    m_tree->setHeaderLabel(tr("Sessions"));
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::itemActivated, this, &MainWindow::onTreeActivated);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &MainWindow::showTreeContextMenu);
 
     // Live filter box above the tree (MobaXterm parity): narrows the bookmark
     // tree as you type, matching name/host/user/folder.
-    auto* filter = new QLineEdit(this);
-    filter->setPlaceholderText(QStringLiteral("Filter sessions…"));
-    filter->setClearButtonEnabled(true);
-    connect(filter, &QLineEdit::textChanged, this, [this](const QString& q) {
+    m_filterEdit = new QLineEdit(this);
+    m_filterEdit->setPlaceholderText(tr("Filter sessions…"));
+    m_filterEdit->setClearButtonEnabled(true);
+    connect(m_filterEdit, &QLineEdit::textChanged, this, [this](const QString& q) {
         m_treeFilter = q;
         reloadSessionTree();
     });
@@ -122,13 +125,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* treeLayout = new QVBoxLayout(treePane);
     treeLayout->setContentsMargins(0, 0, 0, 0);
     treeLayout->setSpacing(2);
-    treeLayout->addWidget(filter);
+    treeLayout->addWidget(m_filterEdit);
     treeLayout->addWidget(m_tree, 1);
 
-    auto* dock = new QDockWidget(QStringLiteral("Sessions"), this);
-    dock->setWidget(treePane);
-    dock->widget()->setMinimumWidth(200);
-    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    m_treeDock = new QDockWidget(tr("Sessions"), this);
+    m_treeDock->setWidget(treePane);
+    m_treeDock->widget()->setMinimumWidth(200);
+    addDockWidget(Qt::LeftDockWidgetArea, m_treeDock);
 
     // Open the persistent session store (per-user app data dir) and load saved
     // sessions so they survive restarts.
@@ -191,7 +194,7 @@ void MainWindow::applyShortcuts() {
 
 void MainWindow::editShortcuts() {
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("Keyboard Shortcuts"));
+    dlg.setWindowTitle(tr("Keyboard Shortcuts"));
     auto* form = new QFormLayout(&dlg);
     QHash<QString, QKeySequenceEdit*> edits;
     // Only the actions that are actually wired are editable.
@@ -216,72 +219,75 @@ void MainWindow::editShortcuts() {
 }
 
 void MainWindow::buildMenus() {
+    // Rebuildable: retranslateUi() calls this again after a language switch, so
+    // start from a clean menu bar to avoid stacking duplicate menus.
+    menuBar()->clear();
     // Keep the menu bar docked inside the main window on every platform. On
     // macOS Qt would otherwise hoist it into the desktop global menu bar; we
     // want all commands to live in the application window itself.
     menuBar()->setNativeMenuBar(false);
 
-    QMenu* file = menuBar()->addMenu(QStringLiteral("&File"));
-    file->addAction(glyphIcon(QStringLiteral("🖥️")), QStringLiteral("New Shell"), this,
+    QMenu* file = menuBar()->addMenu(tr("&File"));
+    file->addAction(glyphIcon(QStringLiteral("🖥️")), tr("New Shell"), this,
                     [this] { openLocalShell(); });
-    file->addAction(glyphIcon(QStringLiteral("🔗")), QStringLiteral("New Session…"), this, [this] {
+    file->addAction(glyphIcon(QStringLiteral("🔗")), tr("New Session…"), this, [this] {
         SessionDialog dlg(this);
         dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
         if (dlg.exec() == QDialog::Accepted) { core::Session s = dlg.session(); addAndSaveSession(s); openSession(s); }
     });
     file->addSeparator();
-    file->addAction(glyphIcon(QStringLiteral("📥")), QStringLiteral("Import from ~/.ssh/config"),
+    file->addAction(glyphIcon(QStringLiteral("📥")), tr("Import from ~/.ssh/config"),
                     this, &MainWindow::importSshConfig);
-    file->addAction(glyphIcon(QStringLiteral("🔑")), QStringLiteral("Import from PuTTY"),
+    file->addAction(glyphIcon(QStringLiteral("🔑")), tr("Import from PuTTY"),
                     this, &MainWindow::importPutty);
-    file->addAction(glyphIcon(QStringLiteral("📁")), QStringLiteral("Import from WinSCP"),
+    file->addAction(glyphIcon(QStringLiteral("📁")), tr("Import from WinSCP"),
                     this, &MainWindow::importWinScp);
 #if defined(Q_OS_WIN)
     // Windows-only session helpers (WSL, the BusyBox local Unix terminal, and shell
     // integration) — kept off the macOS/Linux menus, which already have native Unix.
-    file->addAction(glyphIcon(QStringLiteral("⚡")), QStringLiteral("New PowerShell Session"),
+    file->addAction(glyphIcon(QStringLiteral("⚡")), tr("New PowerShell Session"),
                     this, &MainWindow::newPowerShellSession);
-    file->addAction(glyphIcon(QStringLiteral("🐧")), QStringLiteral("New WSL Session…"),
+    file->addAction(glyphIcon(QStringLiteral("🐧")), tr("New WSL Session…"),
                     this, &MainWindow::newWslSession);
-    file->addAction(glyphIcon(QStringLiteral("🐚")), QStringLiteral("New Local Unix Terminal"),
+    file->addAction(glyphIcon(QStringLiteral("🐚")), tr("New Local Unix Terminal"),
                     this, &MainWindow::newUnixTerminal);
-    file->addAction(glyphIcon(QStringLiteral("🪟")), QStringLiteral("Register with Windows…"),
+    file->addAction(glyphIcon(QStringLiteral("🪟")), tr("Register with Windows…"),
                     this, &MainWindow::registerWindowsIntegration);
 #endif
-    file->addAction(glyphIcon(QStringLiteral("📤")), QStringLiteral("Export Sessions…"),
+    file->addAction(glyphIcon(QStringLiteral("📤")), tr("Export Sessions…"),
                     this, &MainWindow::exportSessions);
-    file->addAction(glyphIcon(QStringLiteral("📨")), QStringLiteral("Import Shared Sessions…"),
+    file->addAction(glyphIcon(QStringLiteral("📨")), tr("Import Shared Sessions…"),
                     this, &MainWindow::importSharedSessions);
     file->addSeparator();
-    file->addAction(glyphIcon(QStringLiteral("🚪")), QStringLiteral("Quit"), this,
+    file->addAction(glyphIcon(QStringLiteral("🚪")), tr("Quit"), this,
                     [this] { close(); });
 
-    QMenu* view = menuBar()->addMenu(QStringLiteral("&View"));
-    view->addAction(glyphIcon(QStringLiteral("➡️")), QStringLiteral("Split Right"), this,
+    QMenu* view = menuBar()->addMenu(tr("&View"));
+    view->addAction(glyphIcon(QStringLiteral("➡️")), tr("Split Right"), this,
                     [this] { splitCurrent(Qt::Horizontal); });
-    view->addAction(glyphIcon(QStringLiteral("⬇️")), QStringLiteral("Split Down"), this,
+    view->addAction(glyphIcon(QStringLiteral("⬇️")), tr("Split Down"), this,
                     [this] { splitCurrent(Qt::Vertical); });
-    view->addAction(glyphIcon(QStringLiteral("🔳")), QStringLiteral("Split 2×2 Grid"), this,
+    view->addAction(glyphIcon(QStringLiteral("🔳")), tr("Split 2×2 Grid"), this,
                     [this] { splitQuad(); });
     view->addSeparator();
-    view->addAction(glyphIcon(QStringLiteral("🖥️")), QStringLiteral("Full Screen"), this, [this] {
+    view->addAction(glyphIcon(QStringLiteral("🖥️")), tr("Full Screen"), this, [this] {
         setWindowState(windowState() ^ Qt::WindowFullScreen);
     })->setShortcut(Qt::Key_F11);
-    QMenu* trans = view->addMenu(glyphIcon(QStringLiteral("🌫️")), QStringLiteral("Transparency"));
+    QMenu* trans = view->addMenu(glyphIcon(QStringLiteral("🌫️")), tr("Transparency"));
     for (int pct : {100, 95, 90, 85, 80}) {
         trans->addAction(QStringLiteral("%1%").arg(pct), this,
                          [this, pct] { setWindowOpacity(pct / 100.0); });
     }
-    QMenu* pasteMenu = view->addMenu(glyphIcon(QStringLiteral("📋")), QStringLiteral("Paste Delay"));
+    QMenu* pasteMenu = view->addMenu(glyphIcon(QStringLiteral("📋")), tr("Paste Delay"));
     for (int ms : {0, 10, 50, 100, 250}) {
-        pasteMenu->addAction(ms == 0 ? QStringLiteral("Off") : QStringLiteral("%1 ms/line").arg(ms),
+        pasteMenu->addAction(ms == 0 ? tr("Off") : tr("%1 ms/line").arg(ms),
                              this, [this, ms] {
             m_pasteDelay = ms;
             for (TerminalWidget* p : m_tabs->findChildren<TerminalWidget*>()) p->setPasteDelay(ms);
         });
     }
     view->addSeparator();
-    auto* hlAction = view->addAction(glyphIcon(QStringLiteral("🌈")), QStringLiteral("Syntax Highlighting"));
+    auto* hlAction = view->addAction(glyphIcon(QStringLiteral("🌈")), tr("Syntax Highlighting"));
     hlAction->setCheckable(true);
     connect(hlAction, &QAction::toggled, this, [this](bool on) {
         for (TerminalWidget* p : m_tabs->findChildren<TerminalWidget*>())
@@ -289,87 +295,87 @@ void MainWindow::buildMenus() {
         m_syntaxHighlight = on;
     });
     view->addSeparator();
-    view->addAction(glyphIcon(QStringLiteral("↗️")), QStringLiteral("Detach Current Tab"),
+    view->addAction(glyphIcon(QStringLiteral("↗️")), tr("Detach Current Tab"),
                     this, &MainWindow::detachCurrentTab);
-    view->addAction(glyphIcon(QStringLiteral("⌨️")), QStringLiteral("Keyboard Shortcuts…"),
+    view->addAction(glyphIcon(QStringLiteral("⌨️")), tr("Keyboard Shortcuts…"),
                     this, &MainWindow::editShortcuts);
 
-    QMenu* tools = menuBar()->addMenu(QStringLiteral("&Tools"));
-    tools->addAction(glyphIcon(QStringLiteral("🔍")), QStringLiteral("Port Scanner…"), this, [this] {
+    QMenu* tools = menuBar()->addMenu(tr("&Tools"));
+    tools->addAction(glyphIcon(QStringLiteral("🔍")), tr("Port Scanner…"), this, [this] {
         auto* dlg = new PortScannerDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("🔑")), QStringLiteral("SSH Key Generator…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("🔑")), tr("SSH Key Generator…"), this, [this] {
         auto* dlg = new KeyGenDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("📡")), QStringLiteral("Packet Capture…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("📡")), tr("Packet Capture…"), this, [this] {
         auto* dlg = new PacketCaptureDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("📶")), QStringLiteral("Network Tools (ping / httping)…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("📶")), tr("Network Tools (ping / httping)…"), this, [this] {
         auto* dlg = new QDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->setWindowTitle(QStringLiteral("Network Tools"));
+        dlg->setWindowTitle(tr("Network Tools"));
         auto* lay = new QFormLayout(dlg);
         auto* host = new QLineEdit(QStringLiteral("localhost"), dlg);
         auto* portSpin = new QSpinBox(dlg); portSpin->setRange(1, 65535); portSpin->setValue(80);
         auto* result = new QLabel(dlg);
         result->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        auto* tcpBtn = new QPushButton(QStringLiteral("TCP ping"), dlg);
-        auto* httpBtn = new QPushButton(QStringLiteral("httping"), dlg);
+        auto* tcpBtn = new QPushButton(tr("TCP ping"), dlg);
+        auto* httpBtn = new QPushButton(tr("httping"), dlg);
         connect(tcpBtn, &QPushButton::clicked, dlg, [=] {
             const auto r = tools::NetProbe::tcpPing(host->text(),
                 static_cast<quint16>(portSpin->value()));
-            result->setText(r.ok ? QStringLiteral("TCP %1 ms — %2").arg(r.ms).arg(r.detail)
-                                 : QStringLiteral("failed: %1").arg(r.detail));
+            result->setText(r.ok ? tr("TCP %1 ms — %2").arg(r.ms).arg(r.detail)
+                                 : tr("failed: %1").arg(r.detail));
         });
         connect(httpBtn, &QPushButton::clicked, dlg, [=] {
             const auto r = tools::NetProbe::httping(host->text());
-            result->setText(r.ok ? QStringLiteral("HTTP %1 ms — %2").arg(r.ms).arg(r.detail)
-                                 : QStringLiteral("failed: %1").arg(r.detail));
+            result->setText(r.ok ? tr("HTTP %1 ms — %2").arg(r.ms).arg(r.detail)
+                                 : tr("failed: %1").arg(r.detail));
         });
-        lay->addRow(QStringLiteral("Host"), host);
-        lay->addRow(QStringLiteral("Port"), portSpin);
+        lay->addRow(tr("Host"), host);
+        lay->addRow(tr("Port"), portSpin);
         auto* btns = new QHBoxLayout; btns->addWidget(tcpBtn); btns->addWidget(httpBtn);
         lay->addRow(btns);
         lay->addRow(result);
         dlg->show();
     });
     tools->addSeparator();
-    tools->addAction(glyphIcon(QStringLiteral("📝")), QStringLiteral("Text Editor…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("📝")), tr("Text Editor…"), this, [this] {
         auto* dlg = new TextEditorDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("📄")), QStringLiteral("Compare Files…"), this, [this] {
-        const QString a = QFileDialog::getOpenFileName(this, QStringLiteral("First file"));
+    tools->addAction(glyphIcon(QStringLiteral("📄")), tr("Compare Files…"), this, [this] {
+        const QString a = QFileDialog::getOpenFileName(this, tr("First file"));
         if (a.isEmpty()) return;
-        const QString b = QFileDialog::getOpenFileName(this, QStringLiteral("Second file"));
+        const QString b = QFileDialog::getOpenFileName(this, tr("Second file"));
         if (b.isEmpty()) return;
         auto* dlg = new TextEditorDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->showDiff(a, b);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("📁")), QStringLiteral("Compare Folders…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("📁")), tr("Compare Folders…"), this, [this] {
         auto* dlg = new FolderDiffDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("🖼️")), QStringLiteral("Image Viewer…"), this, [this] {
-        const QString p = QFileDialog::getOpenFileName(this, QStringLiteral("Open image"),
-            QString(), QStringLiteral("Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.svg)"));
+    tools->addAction(glyphIcon(QStringLiteral("🖼️")), tr("Image Viewer…"), this, [this] {
+        const QString p = QFileDialog::getOpenFileName(this, tr("Open image"),
+            QString(), tr("Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.svg)"));
         if (p.isEmpty()) return;
         auto* dlg = new ImageViewerDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->openImage(p);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("🎨")), QStringLiteral("Color Scheme Editor…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("🎨")), tr("Color Scheme Editor…"), this, [this] {
         TerminalWidget* pane = currentPane();
         const term::ColorScheme start = term::ColorScheme::byName(m_settings.colorScheme());
         auto* dlg = new ColorSchemeDialog(start, this);
@@ -378,47 +384,63 @@ void MainWindow::buildMenus() {
             connect(dlg, &ColorSchemeDialog::schemeChosen, pane, &TerminalWidget::setColorScheme);
         dlg->show();
     });
-    tools->addAction(glyphIcon(QStringLiteral("🗄️")), QStringLiteral("Light Servers…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("🗄️")), tr("Light Servers…"), this, [this] {
         auto* dlg = new ServersDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
     tools->addSeparator();
-    tools->addAction(glyphIcon(QStringLiteral("🪟")), QStringLiteral("Start X Server (for X11 forwarding)"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("🪟")), tr("Start X Server (for X11 forwarding)"), this, [this] {
         QString msg;
         const bool ok = x11::X11Server::ensureRunning(msg);
         if (ok) statusBar()->showMessage(msg, 5000);
-        else QMessageBox::information(this, QStringLiteral("X Server"), msg);
+        else QMessageBox::information(this, tr("X Server"), msg);
     });
-    tools->addAction(glyphIcon(QStringLiteral("📜")), QStringLiteral("Log Session to File…"), this, [this] {
+    tools->addAction(glyphIcon(QStringLiteral("📜")), tr("Log Session to File…"), this, [this] {
         TerminalWidget* pane = currentPane();
         if (!pane) return;
         if (pane->isLogging()) {
             pane->stopLogging();
-            statusBar()->showMessage(QStringLiteral("Session logging stopped"), 3000);
+            statusBar()->showMessage(tr("Session logging stopped"), 3000);
             return;
         }
-        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Log session to"));
+        const QString path = QFileDialog::getSaveFileName(this, tr("Log session to"));
         if (path.isEmpty()) return;
         if (pane->startLogging(path))
-            statusBar()->showMessage(QStringLiteral("Logging session → %1").arg(path), 3000);
+            statusBar()->showMessage(tr("Logging session → %1").arg(path), 3000);
         else
-            QMessageBox::warning(this, windowTitle(), QStringLiteral("Cannot open log file"));
+            QMessageBox::warning(this, windowTitle(), tr("Cannot open log file"));
     });
 
-    QMenu* macros = menuBar()->addMenu(QStringLiteral("&Macros"));
-    macros->addAction(glyphIcon(QStringLiteral("🔴")), QStringLiteral("Start/Stop Recording"),
+    QMenu* macros = menuBar()->addMenu(tr("&Macros"));
+    macros->addAction(glyphIcon(QStringLiteral("🔴")), tr("Start/Stop Recording"),
                       this, &MainWindow::toggleMacroRecording)
         ->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
-    macros->addAction(glyphIcon(QStringLiteral("▶️")), QStringLiteral("Play Macro"),
+    macros->addAction(glyphIcon(QStringLiteral("▶️")), tr("Play Macro"),
                       this, &MainWindow::playMacro)
         ->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
 
-    QMenu* help = menuBar()->addMenu(QStringLiteral("&Help"));
-    help->addAction(glyphIcon(QStringLiteral("ℹ️")), QStringLiteral("About macXterm"), this, [this] {
-        QMessageBox::about(this, QStringLiteral("About macXterm"),
-            QStringLiteral("<b>macXterm</b><br>A native, cross-platform, MIT-licensed "
-                           "MobaXterm-style remote toolbox.<br>Built with Qt 6 + C/C++."));
+    // ── Language (runtime switch, no restart) ────────────────────────────────
+    auto& lang = i18n::LanguageManager::instance();
+    QMenu* langMenu = menuBar()->addMenu(tr("&Language"));
+    auto* langGroup = new QActionGroup(langMenu);
+    langGroup->setExclusive(true);
+    for (const i18n::LanguageInfo& li : lang.available()) {
+        QAction* a = langMenu->addAction(li.nativeName);
+        a->setCheckable(true);
+        a->setChecked(li.code == lang.current());
+        a->setActionGroup(langGroup);
+        const QString code = li.code;
+        connect(a, &QAction::triggered, this, [code] {
+            i18n::LanguageManager::instance().setLanguage(code);
+        });
+    }
+
+    QMenu* help = menuBar()->addMenu(tr("&Help"));
+    help->addAction(glyphIcon(QStringLiteral("ℹ️")), tr("About macXterm"), this, [this] {
+        QMessageBox::about(this, tr("About macXterm"),
+            tr("<b>macXterm</b><br>A native, cross-platform, MIT-licensed "
+               "MobaXterm-style remote toolbox.<br>Built with Qt 6 + C/C++."));
     });
 }
 
@@ -449,14 +471,14 @@ void MainWindow::toggleMacroRecording() {
             m_macro.record(b);
             pane->feedInput(b);
         });
-        statusBar()->showMessage(QStringLiteral("Recording macro… (Macros ▸ Start/Stop to finish)"));
+        statusBar()->showMessage(tr("Recording macro… (Macros ▸ Start/Stop to finish)"));
     } else {
         m_recordingMacro = false;
         m_macro.endRecording();
         // Restore normal routing (respect MultiExec).
         if (m_multiExec) pane->setInputHandler([this](const QByteArray& b) { broadcastInput(b); });
         else pane->setInputHandler(nullptr);
-        statusBar()->showMessage(QStringLiteral("Recorded %1 keystroke event(s).").arg(m_macro.eventCount()), 4000);
+        statusBar()->showMessage(tr("Recorded %1 keystroke event(s).").arg(m_macro.eventCount()), 4000);
     }
 }
 
@@ -479,27 +501,27 @@ void MainWindow::openVault() {
         m_vaultDpapi = true;
         m_vaultUnlocked = true;
         statusBar()->showMessage(
-            QStringLiteral("Vault unlocked (Windows account protection)."), 4000);
+            tr("Vault unlocked (Windows account protection)."), 4000);
         return;
     }
 #if defined(_WIN32)
     if (!exists) {
         // Offer passwordless, account-bound protection when creating a new vault.
-        const auto choice = QMessageBox::question(this, QStringLiteral("Vault"),
-            QStringLiteral("Protect the vault with your Windows account (DPAPI), so no "
+        const auto choice = QMessageBox::question(this, tr("Vault"),
+            tr("Protect the vault with your Windows account (DPAPI), so no "
                            "master password is needed on this machine?"),
             QMessageBox::Yes | QMessageBox::No);
         if (choice == QMessageBox::Yes) {
             m_vault.clear();
             if (!m_vault.saveDpapi(vaultPath())) {
-                QMessageBox::warning(this, QStringLiteral("Vault"),
-                    QStringLiteral("Could not create a Windows-protected vault."));
+                QMessageBox::warning(this, tr("Vault"),
+                    tr("Could not create a Windows-protected vault."));
                 return;
             }
             m_vaultDpapi = true;
             m_vaultUnlocked = true;
             statusBar()->showMessage(
-                QStringLiteral("Vault created (Windows account protection)."), 4000);
+                tr("Vault created (Windows account protection)."), 4000);
             return;
         }
     }
@@ -509,7 +531,7 @@ void MainWindow::openVault() {
     const QString pw = dlg.password();
     if (exists) {
         if (!m_vault.load(vaultPath(), pw)) {
-            QMessageBox::warning(this, QStringLiteral("Vault"), QStringLiteral("Wrong master password."));
+            QMessageBox::warning(this, tr("Vault"), tr("Wrong master password."));
             return;
         }
     } else {
@@ -519,7 +541,7 @@ void MainWindow::openVault() {
     m_vaultDpapi = false;
     m_masterPassword = pw;
     m_vaultUnlocked = true;
-    statusBar()->showMessage(QStringLiteral("Vault unlocked — session passwords are now stored encrypted."), 4000);
+    statusBar()->showMessage(tr("Vault unlocked — session passwords are now stored encrypted."), 4000);
 }
 
 void MainWindow::persistVault() {
@@ -541,8 +563,8 @@ core::Session MainWindow::resolveSecrets(core::Session s) const {
 void MainWindow::importSshConfig() {
     const QString path = QDir::homePath() + QStringLiteral("/.ssh/config");
     if (!QFileInfo::exists(path)) {
-        QMessageBox::information(this, QStringLiteral("Import"),
-            QStringLiteral("No ~/.ssh/config found."));
+        QMessageBox::information(this, tr("Import"),
+            tr("No ~/.ssh/config found."));
         return;
     }
     core::SessionFolder imported = core::SshConfigImporter::importFile(path);
@@ -552,8 +574,8 @@ void MainWindow::importSshConfig() {
     }
     persistSessions();
     reloadSessionTree();
-    QMessageBox::information(this, QStringLiteral("Import"),
-        QStringLiteral("Imported %1 new session(s) from ~/.ssh/config.").arg(added));
+    QMessageBox::information(this, tr("Import"),
+        tr("Imported %1 new session(s) from ~/.ssh/config.").arg(added));
 }
 
 void MainWindow::importPutty() {
@@ -568,9 +590,9 @@ void MainWindow::importPutty() {
     merge(core::PuttyImporter::importFromDir(QDir::homePath() + QStringLiteral("/.putty/sessions")));
     persistSessions();
     reloadSessionTree();
-    QMessageBox::information(this, QStringLiteral("Import"),
-        added ? QStringLiteral("Imported %1 new session(s) from PuTTY.").arg(added)
-              : QStringLiteral("No PuTTY sessions found."));
+    QMessageBox::information(this, tr("Import"),
+        added ? tr("Imported %1 new session(s) from PuTTY.").arg(added)
+              : tr("No PuTTY sessions found."));
 }
 
 void MainWindow::importWinScp() {
@@ -584,15 +606,15 @@ void MainWindow::importWinScp() {
     merge(core::WinScpImporter::importFromRegistry());
     if (added == 0) {
         const QString path = QFileDialog::getOpenFileName(
-            this, QStringLiteral("Select WinSCP.ini"), QString(),
-            QStringLiteral("WinSCP config (WinSCP.ini *.ini);;All files (*)"));
+            this, tr("Select WinSCP.ini"), QString(),
+            tr("WinSCP config (WinSCP.ini *.ini);;All files (*)"));
         if (!path.isEmpty()) merge(core::WinScpImporter::importFile(path));
     }
     persistSessions();
     reloadSessionTree();
-    QMessageBox::information(this, QStringLiteral("Import"),
-        added ? QStringLiteral("Imported %1 new session(s) from WinSCP.").arg(added)
-              : QStringLiteral("No WinSCP sessions found."));
+    QMessageBox::information(this, tr("Import"),
+        added ? tr("Imported %1 new session(s) from WinSCP.").arg(added)
+              : tr("No WinSCP sessions found."));
 }
 
 void MainWindow::newPowerShellSession() {
@@ -615,8 +637,8 @@ void MainWindow::newPowerShellSession() {
         if (QFileInfo::exists(cand)) ps = cand;
     }
     if (ps.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("PowerShell"),
-            QStringLiteral("PowerShell was not found."));
+        QMessageBox::information(this, tr("PowerShell"),
+            tr("PowerShell was not found."));
         return;
     }
     ps = QDir::toNativeSeparators(ps);
@@ -625,8 +647,8 @@ void MainWindow::newPowerShellSession() {
     s.setParam(QStringLiteral("loginshell"), QStringLiteral("0"));
     openSession(s);
 #else
-    QMessageBox::information(this, QStringLiteral("PowerShell"),
-        QStringLiteral("PowerShell sessions are a Windows convenience; on macOS/Linux use a local shell."));
+    QMessageBox::information(this, tr("PowerShell"),
+        tr("PowerShell sessions are a Windows convenience; on macOS/Linux use a local shell."));
 #endif
 }
 
@@ -636,8 +658,8 @@ void MainWindow::newWslSession() {
     QProcess p;
     p.start(QStringLiteral("wsl.exe"), {QStringLiteral("-l"), QStringLiteral("-q")});
     if (!p.waitForFinished(5000)) {
-        QMessageBox::information(this, QStringLiteral("WSL"),
-            QStringLiteral("WSL is not installed or did not respond."));
+        QMessageBox::information(this, tr("WSL"),
+            tr("WSL is not installed or did not respond."));
         return;
     }
     const QByteArray raw = p.readAllStandardOutput();
@@ -650,13 +672,13 @@ void MainWindow::newWslSession() {
         if (!d.isEmpty()) distros << d;
     }
     if (distros.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("WSL"),
-            QStringLiteral("No WSL distributions found."));
+        QMessageBox::information(this, tr("WSL"),
+            tr("No WSL distributions found."));
         return;
     }
     bool ok = false;
     const QString distro = QInputDialog::getItem(
-        this, QStringLiteral("New WSL Session"), QStringLiteral("Distribution:"),
+        this, tr("New WSL Session"), tr("Distribution:"),
         distros, 0, false, &ok);
     if (!ok || distro.isEmpty()) return;
 
@@ -667,8 +689,8 @@ void MainWindow::newWslSession() {
     if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); persistSessions(); reloadSessionTree(); }
     openSession(s);
 #else
-    QMessageBox::information(this, QStringLiteral("WSL"),
-        QStringLiteral("WSL sessions are only available on Windows."));
+    QMessageBox::information(this, tr("WSL"),
+        tr("WSL sessions are only available on Windows."));
 #endif
 }
 
@@ -682,8 +704,8 @@ void MainWindow::newUnixTerminal() {
     if (QFileInfo::exists(beside)) bb = beside;
     else bb = QStandardPaths::findExecutable(QStringLiteral("busybox"));
     if (bb.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("Local Unix Terminal"),
-            QStringLiteral("BusyBox was not found. Put busybox.exe in a \"userland\" folder "
+        QMessageBox::information(this, tr("Local Unix Terminal"),
+            tr("BusyBox was not found. Put busybox.exe in a \"userland\" folder "
                            "next to macXterm.exe (or on PATH) to enable the local Unix terminal."));
         return;
     }
@@ -694,43 +716,43 @@ void MainWindow::newUnixTerminal() {
     s.setParam(QStringLiteral("cwd"), QDir::homePath());
     openSession(s);
 #else
-    QMessageBox::information(this, QStringLiteral("Local Unix Terminal"),
-        QStringLiteral("This system already provides a native Unix shell — use a local shell."));
+    QMessageBox::information(this, tr("Local Unix Terminal"),
+        tr("This system already provides a native Unix shell — use a local shell."));
 #endif
 }
 
 void MainWindow::registerWindowsIntegration() {
     if (!platform::WinIntegration::available()) {
-        QMessageBox::information(this, QStringLiteral("Windows Integration"),
-            QStringLiteral("This action is only available on Windows."));
+        QMessageBox::information(this, tr("Windows Integration"),
+            tr("This action is only available on Windows."));
         return;
     }
     const bool ok = platform::WinIntegration::registerAll();
-    QMessageBox::information(this, QStringLiteral("Windows Integration"),
-        ok ? QStringLiteral("Registered the macxterm: URL protocol and the .mxtsession file "
+    QMessageBox::information(this, tr("Windows Integration"),
+        ok ? tr("Registered the macxterm: URL protocol and the .mxtsession file "
                             "association for your account.")
-           : QStringLiteral("Registration failed — could not write to the registry."));
+           : tr("Registration failed — could not write to the registry."));
 }
 
 void MainWindow::exportSessions() {
     const QString path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("Export sessions"), QStringLiteral("sessions.mxsess"),
-        QStringLiteral("macXterm sessions (*.mxsess *.ini)"));
+        this, tr("Export sessions"), QStringLiteral("sessions.mxsess"),
+        tr("macXterm sessions (*.mxsess *.ini)"));
     if (path.isEmpty()) return;
     if (core::IniStore::save(m_sessions, path))
-        statusBar()->showMessage(QStringLiteral("Exported sessions → %1").arg(path), 3000);
+        statusBar()->showMessage(tr("Exported sessions → %1").arg(path), 3000);
     else
-        QMessageBox::warning(this, windowTitle(), QStringLiteral("Export failed"));
+        QMessageBox::warning(this, windowTitle(), tr("Export failed"));
 }
 
 void MainWindow::importSharedSessions() {
     const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("Import shared sessions"), QString(),
-        QStringLiteral("macXterm sessions (*.mxsess *.ini);;All files (*)"));
+        this, tr("Import shared sessions"), QString(),
+        tr("macXterm sessions (*.mxsess *.ini);;All files (*)"));
     if (path.isEmpty()) return;
     core::SessionFolder imported;
     if (!core::IniStore::load(imported, path)) {
-        QMessageBox::warning(this, windowTitle(), QStringLiteral("Import failed"));
+        QMessageBox::warning(this, windowTitle(), tr("Import failed"));
         return;
     }
     int added = 0;
@@ -738,12 +760,16 @@ void MainWindow::importSharedSessions() {
         if (!m_sessions.findSession(s.name())) { m_sessions.addSession(s); ++added; }
     persistSessions();
     reloadSessionTree();
-    QMessageBox::information(this, QStringLiteral("Import"),
-        QStringLiteral("Imported %1 new session(s).").arg(added));
+    QMessageBox::information(this, tr("Import"),
+        tr("Imported %1 new session(s).").arg(added));
 }
 
 void MainWindow::buildToolbar() {
-    auto* tb = addToolBar(QStringLiteral("Main"));
+    // Rebuildable: retranslateUi() calls this again after a language switch.
+    // Drop the previous toolbar so labels don't stack in two languages.
+    if (m_toolbar) { removeToolBar(m_toolbar); delete m_toolbar; m_toolbar = nullptr; }
+    auto* tb = addToolBar(tr("Main"));
+    m_toolbar = tb;
     tb->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);   // show glyph + label
     // Give the flat toolbar buttons visible hover / pressed / checked feedback.
     // Grey rgba() tints read correctly over both light and dark themes; the
@@ -757,10 +783,10 @@ void MainWindow::buildToolbar() {
         "                      border-color: rgba(127,127,127,0.55); }"
         "QToolButton:checked { background: rgba(64,132,255,0.30);"
         "                      border-color: rgba(64,132,255,0.60); }"));
-    auto* newShell = tb->addAction(glyphIcon(QStringLiteral("🖥️")), QStringLiteral("New Shell"));
+    auto* newShell = tb->addAction(glyphIcon(QStringLiteral("🖥️")), tr("New Shell"));
     connect(newShell, &QAction::triggered, this, [this] { openLocalShell(); });
 
-    auto* newSession = tb->addAction(glyphIcon(QStringLiteral("🔗")), QStringLiteral("New Session"));
+    auto* newSession = tb->addAction(glyphIcon(QStringLiteral("🔗")), tr("New Session"));
     connect(newSession, &QAction::triggered, this, [this] {
         SessionDialog dlg(this);
         dlg.setKnownFolders(core::folderNames(m_sessions.sessions()));
@@ -771,36 +797,36 @@ void MainWindow::buildToolbar() {
         }
     });
 
-    auto* splitH = tb->addAction(glyphIcon(QStringLiteral("➡️")), QStringLiteral("Split →"));
+    auto* splitH = tb->addAction(glyphIcon(QStringLiteral("➡️")), tr("Split →"));
     connect(splitH, &QAction::triggered, this, [this] { splitCurrent(Qt::Horizontal); });
-    auto* splitV = tb->addAction(glyphIcon(QStringLiteral("⬇️")), QStringLiteral("Split ↓"));
+    auto* splitV = tb->addAction(glyphIcon(QStringLiteral("⬇️")), tr("Split ↓"));
     connect(splitV, &QAction::triggered, this, [this] { splitCurrent(Qt::Vertical); });
 
-    auto* multi = tb->addAction(glyphIcon(QStringLiteral("⚡")), QStringLiteral("MultiExec"));
+    auto* multi = tb->addAction(glyphIcon(QStringLiteral("⚡")), tr("MultiExec"));
     multi->setCheckable(true);
     connect(multi, &QAction::toggled, this, &MainWindow::toggleMultiExec);
 
-    auto* tunnels = tb->addAction(glyphIcon(QStringLiteral("🚇")), QStringLiteral("Tunnel"));
+    auto* tunnels = tb->addAction(glyphIcon(QStringLiteral("🚇")), tr("Tunnel"));
     connect(tunnels, &QAction::triggered, this, [this] {
         // The tunnel is established through the currently-active SSH tab.
         TerminalWidget* pane = currentPane();
         const core::Session sshSession = pane ? m_tabSessions.value(pane) : core::Session();
         if (sshSession.type() != core::SessionType::Ssh) {
-            QMessageBox::information(this, QStringLiteral("SSH Tunnel"),
-                QStringLiteral("Open and select an SSH session tab first — the tunnel is "
-                               "forwarded through it."));
+            QMessageBox::information(this, tr("SSH Tunnel"),
+                tr("Open and select an SSH session tab first — the tunnel is "
+                   "forwarded through it."));
             return;
         }
         TunnelDialog dlg(this);
         if (dlg.exec() == QDialog::Accepted) {
             auto* t = new tunnel::SshTunnel(this);
             connect(t, &tunnel::SshTunnel::error, this, [this](const QString& m) {
-                QMessageBox::warning(this, QStringLiteral("Tunnel error"), m);
+                QMessageBox::warning(this, tr("Tunnel error"), m);
             });
             if (t->start(sshSession, dlg.tunnel())) {
                 m_tunnels.append(t);
-                QMessageBox::information(this, QStringLiteral("SSH Tunnel"),
-                    QStringLiteral("Local tunnel listening on port %1 → %2:%3 via %4")
+                QMessageBox::information(this, tr("SSH Tunnel"),
+                    tr("Local tunnel listening on port %1 → %2:%3 via %4")
                         .arg(t->listenPort()).arg(dlg.tunnel().targetHost)
                         .arg(dlg.tunnel().targetPort).arg(sshSession.host()));
             } else {
@@ -809,7 +835,7 @@ void MainWindow::buildToolbar() {
         }
     });
 
-    auto* settings = tb->addAction(glyphIcon(QStringLiteral("⚙️")), QStringLiteral("Settings"));
+    auto* settings = tb->addAction(glyphIcon(QStringLiteral("⚙️")), tr("Settings"));
     connect(settings, &QAction::triggered, this, [this] {
         SettingsDialog dlg(m_settings, this);
         if (dlg.exec() == QDialog::Accepted) {
@@ -823,14 +849,14 @@ void MainWindow::buildToolbar() {
         }
     });
 
-    auto* vault = tb->addAction(glyphIcon(QStringLiteral("🔒")), QStringLiteral("Vault"));
+    auto* vault = tb->addAction(glyphIcon(QStringLiteral("🔒")), tr("Vault"));
     connect(vault, &QAction::triggered, this, [this] { openVault(); });
 
     // Quick-connect bar: type "user@host[:port]" and press Enter to SSH.
     tb->addSeparator();
-    tb->addWidget(new QLabel(QStringLiteral(" Quick connect: "), this));
+    tb->addWidget(new QLabel(tr(" Quick connect: "), this));
     auto* quick = new QLineEdit(this);
-    quick->setPlaceholderText(QStringLiteral("user@host:port"));
+    quick->setPlaceholderText(tr("user@host:port"));
     quick->setClearButtonEnabled(true);
     quick->setMaximumWidth(240);
     connect(quick, &QLineEdit::returnPressed, this, [this, quick] {
@@ -852,6 +878,23 @@ void MainWindow::buildToolbar() {
         openSession(s);
     });
     tb->addWidget(quick);
+}
+
+void MainWindow::changeEvent(QEvent* e) {
+    // Qt posts LanguageChange to every widget when a translator is (un)installed.
+    if (e->type() == QEvent::LanguageChange) retranslateUi();
+    QMainWindow::changeEvent(e);
+}
+
+void MainWindow::retranslateUi() {
+    // Persistent chrome: dock/tree/filter text, then rebuild menus + toolbar in
+    // the new language. Transient dialogs retranslate themselves on next open.
+    if (m_treeDock)   m_treeDock->setWindowTitle(tr("Sessions"));
+    if (m_tree)       m_tree->setHeaderLabel(tr("Sessions"));
+    if (m_filterEdit) m_filterEdit->setPlaceholderText(tr("Filter sessions…"));
+    buildMenus();
+    buildToolbar();
+    reloadSessionTree();
 }
 
 void MainWindow::reloadSessionTree() {
@@ -950,14 +993,14 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
         if (!s) return;
         const core::Session sc = *s;   // snapshot for the lambdas
 
-        QAction* open = menu.addAction(glyphIcon(core::sessionGlyph(sc)), QStringLiteral("Open"));
+        QAction* open = menu.addAction(glyphIcon(core::sessionGlyph(sc)), tr("Open"));
         menu.setDefaultAction(open);
         connect(open, &QAction::triggered, this, [this, name] {
             if (const core::Session* sp = m_sessions.findSession(name)) openSession(*sp);
         });
         if (sc.type() == core::SessionType::Ssh || sc.type() == core::SessionType::Sftp) {
             QAction* sftp = menu.addAction(glyphIcon(QStringLiteral("📂")),
-                                           QStringLiteral("Open SFTP browser"));
+                                           tr("Open SFTP browser"));
             connect(sftp, &QAction::triggered, this, [this, name] {
                 if (const core::Session* sp = m_sessions.findSession(name)) showSftpFor(*sp);
             });
@@ -965,27 +1008,27 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
         menu.addSeparator();
 
         QAction* edit = menu.addAction(glyphIcon(QStringLiteral("✏️")),
-                                       QStringLiteral("Edit session…"));
+                                       tr("Edit session…"));
         connect(edit, &QAction::triggered, this, [this, name] {
             if (const core::Session* sp = m_sessions.findSession(name))
                 openSessionEditor(*sp, name);
         });
-        QAction* rename = menu.addAction(glyphIcon(QStringLiteral("🏷️")), QStringLiteral("Rename…"));
+        QAction* rename = menu.addAction(glyphIcon(QStringLiteral("🏷️")), tr("Rename…"));
         connect(rename, &QAction::triggered, this, [this, name] {
             bool ok = false;
             const QString neu = QInputDialog::getText(
-                this, QStringLiteral("Rename session"), QStringLiteral("New name:"),
+                this, tr("Rename session"), tr("New name:"),
                 QLineEdit::Normal, name, &ok);
             if (!ok) return;
             if (!core::renameSessionInList(m_sessions.sessions(), name, neu)) {
-                QMessageBox::warning(this, QStringLiteral("Rename session"),
-                    QStringLiteral("Name is empty or already in use."));
+                QMessageBox::warning(this, tr("Rename session"),
+                    tr("Name is empty or already in use."));
                 return;
             }
             persistSessions();
             reloadSessionTree();
         });
-        QAction* dup = menu.addAction(glyphIcon(QStringLiteral("📄")), QStringLiteral("Duplicate"));
+        QAction* dup = menu.addAction(glyphIcon(QStringLiteral("📄")), tr("Duplicate"));
         connect(dup, &QAction::triggered, this, [this, name] {
             const core::Session* sp = m_sessions.findSession(name);
             if (!sp) return;
@@ -993,12 +1036,12 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
             copy.setName(core::uniqueCopyName(m_sessions.sessions(), name));
             addAndSaveSession(copy);
         });
-        QAction* icon = menu.addAction(glyphIcon(QStringLiteral("🎨")), QStringLiteral("Set icon…"));
+        QAction* icon = menu.addAction(glyphIcon(QStringLiteral("🎨")), tr("Set icon…"));
         connect(icon, &QAction::triggered, this, [this, name, sc] {
             bool ok = false;
             const QString glyph = QInputDialog::getText(
-                this, QStringLiteral("Set icon"),
-                QStringLiteral("Icon (an emoji; leave blank to reset):"),
+                this, tr("Set icon"),
+                tr("Icon (an emoji; leave blank to reset):"),
                 QLineEdit::Normal, sc.param(QStringLiteral("icon")), &ok);
             if (!ok) return;
             core::setSessionIcon(m_sessions.sessions(), name, glyph);
@@ -1007,14 +1050,14 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
         });
 
         // Move-to-folder submenu: root, each existing folder, then a new one.
-        QMenu* move = menu.addMenu(glyphIcon(QStringLiteral("📁")), QStringLiteral("Move to folder"));
+        QMenu* move = menu.addMenu(glyphIcon(QStringLiteral("📁")), tr("Move to folder"));
         const QString cur = sc.param(QStringLiteral("folder"));
         const auto moveTo = [this, name](const QString& folder) {
             core::moveSessionToFolder(m_sessions.sessions(), name, folder);
             persistSessions();
             reloadSessionTree();
         };
-        QAction* toRoot = move->addAction(QStringLiteral("(No folder)"));
+        QAction* toRoot = move->addAction(tr("(No folder)"));
         toRoot->setCheckable(true);
         toRoot->setChecked(cur.isEmpty());
         connect(toRoot, &QAction::triggered, this, [moveTo] { moveTo(QString()); });
@@ -1026,11 +1069,11 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
         }
         move->addSeparator();
         QAction* newFolder = move->addAction(glyphIcon(QStringLiteral("➕")),
-                                             QStringLiteral("New folder…"));
+                                             tr("New folder…"));
         connect(newFolder, &QAction::triggered, this, [this, moveTo] {
             bool ok = false;
             const QString f = QInputDialog::getText(
-                this, QStringLiteral("New folder"), QStringLiteral("Folder name:"),
+                this, tr("New folder"), tr("Folder name:"),
                 QLineEdit::Normal, QString(), &ok);
             if (ok && !f.trimmed().isEmpty()) moveTo(f);
         });
@@ -1038,13 +1081,13 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
 
         if (!sc.host().isEmpty()) {
             QAction* copyHost = menu.addAction(glyphIcon(QStringLiteral("🌐")),
-                                               QStringLiteral("Copy host address"));
+                                               tr("Copy host address"));
             connect(copyHost, &QAction::triggered, this, [sc] {
                 QGuiApplication::clipboard()->setText(sc.host());
             });
             if (sc.type() == core::SessionType::Ssh) {
                 QAction* copyCmd = menu.addAction(glyphIcon(QStringLiteral("⌨️")),
-                                                  QStringLiteral("Copy SSH command"));
+                                                  tr("Copy SSH command"));
                 connect(copyCmd, &QAction::triggered, this, [sc] {
                     QString cmd = QStringLiteral("ssh ");
                     if (!sc.username().isEmpty()) cmd += sc.username() + QLatin1Char('@');
@@ -1057,28 +1100,28 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
             menu.addSeparator();
         }
 
-        QAction* del = menu.addAction(glyphIcon(QStringLiteral("🗑️")), QStringLiteral("Delete"));
+        QAction* del = menu.addAction(glyphIcon(QStringLiteral("🗑️")), tr("Delete"));
         connect(del, &QAction::triggered, this, [this, name] {
-            if (QMessageBox::question(this, QStringLiteral("Delete session"),
-                    QStringLiteral("Delete session \"%1\"?").arg(name)) == QMessageBox::Yes) {
+            if (QMessageBox::question(this, tr("Delete session"),
+                    tr("Delete session \"%1\"?").arg(name)) == QMessageBox::Yes) {
                 deleteSession(name);
             }
         });
     } else if (isFolder) {
         const QString folder = item->text(0);
         QAction* add = menu.addAction(glyphIcon(QStringLiteral("➕")),
-                                      QStringLiteral("New session in \"%1\"…").arg(folder));
+                                      tr("New session in \"%1\"…").arg(folder));
         connect(add, &QAction::triggered, this, [this, folder] {
             core::Session seed(QString(), core::SessionType::Ssh);
             seed.setParam(QStringLiteral("folder"), folder);
             openSessionEditor(seed, QString());
         });
         QAction* rename = menu.addAction(glyphIcon(QStringLiteral("✏️")),
-                                         QStringLiteral("Rename folder…"));
+                                         tr("Rename folder…"));
         connect(rename, &QAction::triggered, this, [this, folder] {
             bool ok = false;
             const QString neu = QInputDialog::getText(
-                this, QStringLiteral("Rename folder"), QStringLiteral("New folder name:"),
+                this, tr("Rename folder"), tr("New folder name:"),
                 QLineEdit::Normal, folder, &ok);
             if (!ok || neu.trimmed().isEmpty()) return;
             core::renameFolderInList(m_sessions.sessions(), folder, neu);
@@ -1086,30 +1129,30 @@ void MainWindow::showTreeContextMenu(const QPoint& pos) {
             reloadSessionTree();
         });
         QAction* remove = menu.addAction(glyphIcon(QStringLiteral("🗑️")),
-                                         QStringLiteral("Remove folder (keep sessions)"));
+                                         tr("Remove folder (keep sessions)"));
         connect(remove, &QAction::triggered, this, [this, folder] {
-            if (QMessageBox::question(this, QStringLiteral("Remove folder"),
-                    QStringLiteral("Move the sessions in \"%1\" to the top level?").arg(folder))
+            if (QMessageBox::question(this, tr("Remove folder"),
+                    tr("Move the sessions in \"%1\" to the top level?").arg(folder))
                     != QMessageBox::Yes) return;
             core::renameFolderInList(m_sessions.sessions(), folder, QString());
             persistSessions();
             reloadSessionTree();
         });
         menu.addSeparator();
-        connect(menu.addAction(glyphIcon(QStringLiteral("🔽")), QStringLiteral("Expand all")),
+        connect(menu.addAction(glyphIcon(QStringLiteral("🔽")), tr("Expand all")),
                 &QAction::triggered, this, [this] { m_tree->expandAll(); });
-        connect(menu.addAction(glyphIcon(QStringLiteral("🔼")), QStringLiteral("Collapse all")),
+        connect(menu.addAction(glyphIcon(QStringLiteral("🔼")), tr("Collapse all")),
                 &QAction::triggered, this, [this] { m_tree->collapseAll(); });
     } else {   // root or empty space
         QAction* add = menu.addAction(glyphIcon(QStringLiteral("➕")),
-                                      QStringLiteral("New session…"));
+                                      tr("New session…"));
         connect(add, &QAction::triggered, this, [this] {
             openSessionEditor(core::Session(QString(), core::SessionType::Ssh), QString());
         });
         menu.addSeparator();
-        connect(menu.addAction(glyphIcon(QStringLiteral("🔽")), QStringLiteral("Expand all")),
+        connect(menu.addAction(glyphIcon(QStringLiteral("🔽")), tr("Expand all")),
                 &QAction::triggered, this, [this] { m_tree->expandAll(); });
-        connect(menu.addAction(glyphIcon(QStringLiteral("🔼")), QStringLiteral("Collapse all")),
+        connect(menu.addAction(glyphIcon(QStringLiteral("🔼")), tr("Collapse all")),
                 &QAction::triggered, this, [this] { m_tree->collapseAll(); });
     }
 
@@ -1179,16 +1222,16 @@ TerminalWidget* MainWindow::openSession(const core::Session& session) {
         auto* client = new tools::S3Client(this);
         auto* dlg = new QDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->setWindowTitle(QStringLiteral("S3: ") + s.host());
+        dlg->setWindowTitle(tr("S3: ") + s.host());
         dlg->resize(420, 520);
         auto* lay = new QVBoxLayout(dlg);
         auto* list = new QListWidget(dlg);
         lay->addWidget(list);
         connect(client, &tools::S3Client::listed, dlg, [list](const QStringList& keys) {
-            list->addItems(keys.isEmpty() ? QStringList{QStringLiteral("(empty)")} : keys);
+            list->addItems(keys.isEmpty() ? QStringList{tr("(empty)")} : keys);
         });
         connect(client, &tools::S3Client::failed, dlg, [list](const QString& e) {
-            list->addItem(QStringLiteral("Error: ") + e);
+            list->addItem(tr("Error: ") + e);
         });
         client->listBucket(s.username(), s.param("password"),
                            s.param("region", QStringLiteral("us-east-1")), s.host());
@@ -1277,7 +1320,7 @@ core::Session MainWindow::resolveGateway(const core::Session& session) {
     auto* tun = new tunnel::SshTunnel(this);
     if (!tun->start(gwSess, t) || tun->listenPort() == 0) {
         tun->deleteLater();
-        statusBar()->showMessage(QStringLiteral("Gateway tunnel failed; connecting directly"), 4000);
+        statusBar()->showMessage(tr("Gateway tunnel failed; connecting directly"), 4000);
         return session;
     }
     m_tunnels.push_back(tun);
@@ -1287,7 +1330,7 @@ core::Session MainWindow::resolveGateway(const core::Session& session) {
     routed.setHost(QStringLiteral("127.0.0.1"));
     routed.setPort(tun->listenPort());
     statusBar()->showMessage(
-        QStringLiteral("Routing %1 via gateway %2 (127.0.0.1:%3)")
+        tr("Routing %1 via gateway %2 (127.0.0.1:%3)")
             .arg(session.host(), gwHost).arg(tun->listenPort()), 4000);
     return routed;
 }
@@ -1431,7 +1474,7 @@ void MainWindow::showSftpFor(const core::Session& session) {
     if (!m_sftpDock) {
         m_sftpPanel = new SftpPanel(this);
         m_sftpPanel->setMinimumWidth(220);   // keep the 4-column list + toolbar legible
-        m_sftpDock = new QDockWidget(QStringLiteral("SFTP"), this);
+        m_sftpDock = new QDockWidget(tr("SFTP"), this);
         m_sftpDock->setWidget(m_sftpPanel);
         addDockWidget(Qt::LeftDockWidgetArea, m_sftpDock);   // MobaXterm places it on the left
         // Stack (tab) with the FTP dock rather than splitting the left width
@@ -1456,7 +1499,7 @@ void MainWindow::showFtpFor(const core::Session& session) {
     if (!m_ftpDock) {
         m_ftpPanel = new SftpPanel(SftpPanel::Backend::Ftp, this);
         m_ftpPanel->setMinimumWidth(220);
-        m_ftpDock = new QDockWidget(QStringLiteral("FTP"), this);
+        m_ftpDock = new QDockWidget(tr("FTP"), this);
         m_ftpDock->setWidget(m_ftpPanel);
         addDockWidget(Qt::LeftDockWidgetArea, m_ftpDock);
         if (m_sftpDock) tabifyDockWidget(m_sftpDock, m_ftpDock);

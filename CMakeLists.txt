@@ -32,7 +32,7 @@ if(APPLE)
   endforeach()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Sql Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Sql Test LinguistTools)
 
 # QtSerialPort (optional) — Serial session type when present. Kept optional so the
 # app still builds against a Qt kit that omits the SerialPort add-on (as WebEngine

@@ -15,6 +15,9 @@ class QTabWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QDockWidget;
+class QToolBar;
+class QLineEdit;
+class QEvent;
 
 namespace macxterm::ui {
 
@@ -40,9 +43,16 @@ public:
 public slots:
     void toggleMultiExec(bool on);
 
+protected:
+    // Rebuild all always-visible chrome when the UI language changes at runtime
+    // (LanguageChange is posted by QTranslator install/remove). Transient dialogs
+    // are recreated per-open, so they pick up the language on their next launch.
+    void changeEvent(QEvent* e) override;
+
 private:
     void buildToolbar();
     void buildMenus();
+    void retranslateUi();       // re-apply text to persistent chrome (menus/toolbar/docks)
     void importSshConfig();
     void importPutty();
     void importWinScp();
@@ -92,6 +102,9 @@ private:
 
     QTabWidget* m_tabs = nullptr;
     QTreeWidget* m_tree = nullptr;
+    QToolBar* m_toolbar = nullptr;      // main toolbar (rebuilt on language change)
+    QLineEdit* m_filterEdit = nullptr;  // session-tree filter box
+    QDockWidget* m_treeDock = nullptr;  // session-tree dock (title retranslated)
     QString m_treeFilter;   // live filter text for the session tree
     QDockWidget* m_sftpDock = nullptr;
     SftpPanel* m_sftpPanel = nullptr;

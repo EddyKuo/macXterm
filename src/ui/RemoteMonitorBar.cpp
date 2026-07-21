@@ -8,7 +8,7 @@ namespace macxterm::ui {
 
 RemoteMonitorBar::RemoteMonitorBar(QWidget* parent) : QLabel(parent) {
     connect(this, &RemoteMonitorBar::sample, this, [this](double cpu, double mem) {
-        setText(QStringLiteral("  CPU %1%%  ·  MEM %2%%  ")
+        setText(tr("  CPU %1%%  ·  MEM %2%%  ")
                     .arg(cpu, 0, 'f', 0).arg(mem, 0, 'f', 0));
     });
 }
@@ -24,7 +24,7 @@ void RemoteMonitorBar::stop() {
 
 void RemoteMonitorBar::start(const core::Session& session) {
     stop();
-    setText(QStringLiteral("  monitor: connecting…  "));
+    setText(tr("  monitor: connecting…  "));
     core::Session s = session;
     m_worker = std::make_shared<std::thread>([this, s] {
         tools::SshExec exec;

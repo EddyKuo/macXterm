@@ -12,7 +12,7 @@
 namespace macxterm::ui {
 
 ImageViewerDialog::ImageViewerDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("Image Viewer"));
+    setWindowTitle(tr("Image Viewer"));
     resize(800, 600);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -44,13 +44,13 @@ void ImageViewerDialog::showIndex(int i) {
     m_index = i;
     const QString path = QDir(m_dir).filePath(m_siblings[i]);
     m_pixmap.load(path);
-    setWindowTitle(QStringLiteral("Image Viewer — %1 (%2/%3)")
+    setWindowTitle(tr("Image Viewer — %1 (%2/%3)")
                        .arg(m_siblings[i]).arg(i + 1).arg(m_siblings.size()));
     rescale();
 }
 
 void ImageViewerDialog::rescale() {
-    if (m_pixmap.isNull()) { m_label->setText(QStringLiteral("Cannot load image")); return; }
+    if (m_pixmap.isNull()) { m_label->setText(tr("Cannot load image")); return; }
     m_label->setPixmap(m_pixmap.scaled(m_scroll->viewport()->size(),
                                        Qt::KeepAspectRatio, Qt::SmoothTransformation));
 }

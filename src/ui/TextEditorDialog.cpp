@@ -11,15 +11,15 @@
 namespace macxterm::ui {
 
 TextEditorDialog::TextEditorDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("Text Editor"));
+    setWindowTitle(tr("Text Editor"));
     resize(720, 560);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
     auto* tb = new QToolBar(this);
-    tb->addAction(QStringLiteral("Open"), this, &TextEditorDialog::openDialog);
-    tb->addAction(QStringLiteral("Save"), this, &TextEditorDialog::save);
-    tb->addAction(QStringLiteral("Save As"), this, &TextEditorDialog::saveAs);
+    tb->addAction(tr("Open"), this, &TextEditorDialog::openDialog);
+    tb->addAction(tr("Save"), this, &TextEditorDialog::save);
+    tb->addAction(tr("Save As"), this, &TextEditorDialog::saveAs);
     layout->addWidget(tb);
 
     m_edit = new QPlainTextEdit(this);
@@ -33,12 +33,12 @@ void TextEditorDialog::openFile(const QString& path) {
     if (f.open(QIODevice::ReadOnly)) {
         m_edit->setPlainText(QString::fromUtf8(f.readAll()));
         m_path = path;
-        setWindowTitle(QStringLiteral("Text Editor — ") + path);
+        setWindowTitle(tr("Text Editor — ") + path);
     }
 }
 
 void TextEditorDialog::openDialog() {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open file"));
+    const QString path = QFileDialog::getOpenFileName(this, tr("Open file"));
     openFile(path);
 }
 
@@ -55,16 +55,16 @@ void TextEditorDialog::save() {
 
 void TextEditorDialog::saveAs() {
     if (m_diffMode) return;
-    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save as"), m_path);
+    const QString path = QFileDialog::getSaveFileName(this, tr("Save as"), m_path);
     if (path.isEmpty()) return;
     m_path = path;
     save();
-    setWindowTitle(QStringLiteral("Text Editor — ") + path);
+    setWindowTitle(tr("Text Editor — ") + path);
 }
 
 void TextEditorDialog::showDiff(const QString& fileA, const QString& fileB) {
     m_diffMode = true;
-    setWindowTitle(QStringLiteral("Compare: %1 ⇄ %2").arg(fileA, fileB));
+    setWindowTitle(tr("Compare: %1 ⇄ %2").arg(fileA, fileB));
     m_edit->setReadOnly(true);
 
     auto read = [](const QString& p) {
